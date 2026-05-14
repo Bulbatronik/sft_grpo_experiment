@@ -1,0 +1,46 @@
+# Base hyperparameters shared across all four SFT runs (verl 0.8.x sft_trainer).
+#
+# Launch command (inside Singularity container):
+#   torchrun --standalone --nnodes=1 --nproc-per-node=<N> \
+#       -m verl.trainer.sft_trainer <key>=<value> ...
+#
+# Per-run overrides (data.train_files, trainer.experiment_name,
+# trainer.default_local_dir) are appended by scripts/02_train_sft.py.
+
+# ── Data ────────────────────────────────────────────────────────────────────
+data.val_files: ~/gsm8k_selection_experiment/data/gsm8k_test.parquet
+data.messages_key: messages
+data.max_length: 1024
+data.train_batch_size: 128
+data.micro_batch_size_per_gpu: 4
+data.use_dynamic_bsz: true
+data.max_token_len_per_gpu: 4096
+data.truncation: error
+data.pad_mode: no_padding
+data.ignore_input_ids_mismatch: true
+
+# ── Model ────────────────────────────────────────────────────────────────────
+model.path: Qwen/Qwen2.5-0.5B-Instruct
+model.use_remove_padding: true
+
+# ── Engine / backend ─────────────────────────────────────────────────────────
+engine: fsdp
+
+# ── Optimizer ───────────────────────────────────────────────────────────────
+optim: fsdp
+optim.lr: 2e-5
+optim.lr_scheduler_type: cosine
+optim.lr_warmup_steps_ratio: 0.03
+optim.weight_decay: 0.01
+optim.clip_grad: 1.0
+
+# ── Trainer ─────────────────────────────────────────────────────────────────
+trainer.total_epochs: 3
+trainer.project_name: gsm8k_sft_selection
+trainer.logger: "['console']"
+trainer.n_gpus_per_node: 1
+trainer.nnodes: 1
+trainer.save_freq: -1
+trainer.test_freq: -1
+trainer.resume_mode: disable
+# trainer.default_local_dir is set per-run to /orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints/sft/<sel>

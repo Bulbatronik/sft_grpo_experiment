@@ -1,0 +1,29 @@
+# All packages below are expected to be available inside the Singularity container
+# (verl.sif).  This file documents exact dependency versions for reproducibility
+# and can be used to build a fresh environment if needed.
+
+# Core training framework
+verl>=0.3.0
+
+# Deep learning
+torch>=2.3.0
+transformers>=4.45.0
+accelerate>=0.34.0
+
+# Inference / rollout engine
+vllm>=0.6.0
+
+# Data
+datasets>=2.21.0
+pyarrow>=17.0.0
+
+# Embedding and diversity selection
+sentence-transformers>=3.1.0
+scikit-learn>=1.5.0
+
+# Utilities
+numpy>=1.26.0
+tqdm>=4.66.0
+pyyaml>=6.0.1
+matplotlib>=3.9.0
+tensorboard>=2.17.0
