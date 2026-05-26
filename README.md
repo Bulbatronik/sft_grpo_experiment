@@ -37,50 +37,48 @@ reference lines.
 
 ## Install
 
-```bash
-# Recommended: inside a Singularity container or fresh venv
-pip install -r requirements.txt
-```
+See [INSTALLATION.md](INSTALLATION.md) for the full setup guide (Singularity container, conda env, overlay).
 
-verl version pinned in `requirements.txt` (`verl>=0.3.0`). The experiment was
-developed and tested against verl 0.3.x.
+Verified stack: `verl 0.8.0.dev` · `vllm 0.11.0` · `torch 2.8.0+cu128`
 
 ---
 
 ## Running the pipeline
 
-### Step-by-step
+Jobs are submitted via SLURM from the login node. Each phase depends on the previous one completing successfully.
 
 ```bash
-# Phase 0 — download and convert GSM8K
-python scripts/00_prepare_gsm8k.py --seed 42
+cd /home/usemil/orcd/scratch/sft_grpo_experiment
 
-# Phase 1 — embed, PCA, SFT subset selection
-python scripts/01_embed_and_select_sft.py --seed 42
+# Phase 0 — data prep (CPU, ~5 min)
+make slurm-prepare
 
-# Phase 2 — train 4 SFT models
-python scripts/02_train_sft.py --seed 42 --nproc 1
+# Phase 1 — embed + PCA + SFT selection (~20 min, 1 GPU)
+make slurm-embed
 
-# Phase 3 — rollout scoring + GRPO subset selection
-python scripts/03_rollout_and_select_grpo.py --seed 42
+# Phase 2 — 4 SFT runs (~2-4 h each, 1 GPU)
+make slurm-sft
 
-# Phase 4 — train 16 GRPO models (add --dry-run to smoke-test with 20 steps)
-python scripts/04_train_grpo.py --seed 42
+# Phase 3 — rollout scoring + GRPO selection (~1-2 h, 1 GPU)
+make slurm-rollout
 
-# Phase 5 — evaluate all 21 models
-python scripts/05_evaluate.py --seed 42
+# Phase 4 — 16 GRPO runs (SLURM array, 4 concurrent, ~1-2 h each)
+make slurm-grpo
+
+# Phase 5 — evaluate all 21 models (~1-2 h, 1 GPU)
+make slurm-eval
 ```
 
-### Via Make
+Monitor jobs with `squeue --me`. Logs go to `logs/`.
+
+All intermediate outputs are cached; re-running a phase is safe. Use `--force` to recompute.
+
+### Smoke-testing GRPO
 
 ```bash
-make all          # full pipeline
-make grpo-dry     # smoke-test GRPO configs (--dry-run)
-make NPROC=4 sft  # override GPU count
+# Run 20 steps only to check configs before committing hours of compute
+DRY_RUN=1 sbatch scripts/slurm/submit_grpo.sh
 ```
-
-All intermediate outputs are cached; re-running a phase is safe. Use `--force`
-to recompute.
 
 ---
 
@@ -133,7 +131,7 @@ regime.
 ## Directory layout
 
 ```
-gsm8k_selection_experiment/
+sft_grpo_experiment/
 ├── configs/
 │   ├── base_sft.yaml      shared SFT hyperparameters
 │   ├── base_grpo.yaml     shared GRPO hyperparameters

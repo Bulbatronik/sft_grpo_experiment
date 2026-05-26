@@ -1,19 +1,21 @@
 SEED       ?= 42
 NPROC      ?= 1
 DATA_DIR   ?= $(PWD)/data
-CKPT_DIR   ?= /orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints
+CKPT_DIR   ?= $(PWD)/checkpoints
 LOGS_DIR   ?= $(PWD)/logs
 RESULTS    ?= $(PWD)/results
 
-# CPU-only phases use the my_env conda environment.
-CONDA_PYTHON ?= $(HOME)/.conda/envs/my_env/bin/python3
-# GPU phases run inside the Singularity container (the container has python3 + verl + vllm).
-SIF        ?= $(HOME)/verl.sif
-SINGULARITY ?= singularity exec --nv -B /orcd $(SIF)
+# CPU-only phases use the dataval_env conda environment.
+CONDA_PYTHON ?= $(HOME)/.conda/envs/dataval_env/bin/python3
+
+# GPU phases run inside the Singularity container with a writable overlay.
+SIF        ?= /home/usemil/orcd/scratch/apptainer/verl.sif
+OVERLAY    ?= /home/usemil/orcd/scratch/apptainer/verl_overlay.img
+SINGULARITY ?= singularity exec --nv --overlay $(OVERLAY) -B /orcd,/home --env PYTHONNOUSERSITE=1 $(SIF)
 
 .PHONY: all prepare embed sft rollout grpo eval slurm-prepare slurm-embed slurm-sft slurm-rollout slurm-grpo slurm-eval clean help
 
-# ── Direct execution (login node / interactive GPU session) ──────────────────
+# ── Direct execution (interactive GPU session) ────────────────────────────────
 
 all: prepare embed sft rollout grpo eval
 
@@ -104,7 +106,7 @@ clean:
 
 help:
 	@echo "Direct execution targets (interactive GPU session):"
-	@echo "  prepare   Phase 0: download GSM8K + write parquets (my_env conda)"
+	@echo "  prepare   Phase 0: download GSM8K + write parquets (dataval_env conda)"
 	@echo "  embed     Phase 1: embed + PCA + SFT selection (Singularity)"
 	@echo "  sft       Phase 2: 4 SFT runs via verl (Singularity)"
 	@echo "  rollout   Phase 3: rollout scoring + GRPO selection (Singularity)"
@@ -113,11 +115,13 @@ help:
 	@echo "  eval      Phase 5: evaluate 21 models (Singularity)"
 	@echo "  all       Run all phases end-to-end"
 	@echo ""
-	@echo "SLURM submission targets:"
+	@echo "SLURM submission targets (preferred):"
 	@echo "  slurm-{prepare,embed,sft,rollout,grpo,eval}"
 	@echo "  (grpo uses --array=0-15%4 for 16 runs, 4 concurrent)"
 	@echo ""
 	@echo "Variables (override with VAR=val):"
 	@echo "  SEED=$(SEED)  NPROC=$(NPROC)"
 	@echo "  SIF=$(SIF)"
+	@echo "  OVERLAY=$(OVERLAY)"
 	@echo "  CONDA_PYTHON=$(CONDA_PYTHON)"
+	@echo "  CKPT_DIR=$(CKPT_DIR)"

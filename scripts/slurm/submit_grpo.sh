@@ -6,11 +6,16 @@
 #SBATCH -c 16
 #SBATCH -p mit_normal_gpu
 #SBATCH --array=0-15%4
-#SBATCH --output=%x-%A_%a.out
+#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%A_%a.out
 
 # Phase 4 — GRPO training (16 runs via SLURM array, up to 4 concurrent).
 # Array index 0-15 maps to all 16 (sft_sel, grpo_sel) combinations.
+# To smoke-test: DRY_RUN=1 sbatch submit_grpo.sh
 
+REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
+CKPT_DIR=$REPO_DIR/checkpoints
+SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
+OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
 SEED=${SEED:-42}
 DRY_RUN=${DRY_RUN:-""}
 
@@ -23,27 +28,32 @@ GRPO_IDX=$((IDX % 4))
 SFT_SEL=${SFT_SELS[$SFT_IDX]}
 GRPO_SEL=${GRPO_SELS[$GRPO_IDX]}
 
-CKPT_DIR=/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints
-
 echo "Array task $IDX: SFT=$SFT_SEL  GRPO=$GRPO_SEL"
 
-module load apptainer
+mkdir -p $REPO_DIR/logs $CKPT_DIR/grpo
+
+module load apptainer/1.4.2
 
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
-
-cd $HOME/gsm8k_selection_experiment
 
 EXTRA_ARGS=""
 if [ -n "$DRY_RUN" ]; then
     EXTRA_ARGS="--dry-run"
 fi
 
-singularity exec --nv -B /orcd $HOME/verl.sif \
+cd $REPO_DIR
+singularity exec --nv \
+    --overlay $OVERLAY \
+    -B /orcd,/home \
+    --env PYTHONNOUSERSITE=1 \
+    $SIF \
     python3 scripts/04_train_grpo.py \
         --seed $SEED \
+        --data-dir $REPO_DIR/data \
         --sft-checkpoints-dir $CKPT_DIR/sft \
         --grpo-checkpoints-dir $CKPT_DIR/grpo \
+        --logs-dir $REPO_DIR/logs \
         --sft-selections "$SFT_SEL" \
         --grpo-selections "$GRPO_SEL" \
         $EXTRA_ARGS

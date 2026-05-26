@@ -4,11 +4,18 @@
 #SBATCH --mem=16G
 #SBATCH -c 4
 #SBATCH -p mit_normal
-#SBATCH --output=%x-%j.out
+#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%j.out
 
 # Phase 0 — prepare GSM8K parquets (CPU only, no GPU needed)
-eval "$(conda shell.bash hook)"
-conda activate my_env
 
-cd $HOME/gsm8k_selection_experiment
-python scripts/00_prepare_gsm8k.py --seed 42
+REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
+SEED=${SEED:-42}
+
+mkdir -p $REPO_DIR/logs
+
+source /etc/profile.d/modules.sh
+module load miniforge
+conda activate dataval_env
+
+cd $REPO_DIR
+python3 scripts/00_prepare_gsm8k.py --seed $SEED --data-dir $REPO_DIR/data

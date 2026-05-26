@@ -5,30 +5,54 @@
 #SBATCH --mem=64G
 #SBATCH -c 16
 #SBATCH -p mit_normal_gpu
-#SBATCH --output=%x-%j.out
+#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%j.out
 
 # Phase 2 — SFT training (4 runs, sequential).
-# Each run is passed as a positional argument; runs all four by default.
 # Usage: sbatch submit_sft.sh [selection_name]
+#   selection_name: one of diverse_5pct, random_5pct, diverse_20pct, random_20pct
+#   (omit to run all four sequentially)
 
-SELECTION=${1:-""}  # empty = run all four
+REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
+CKPT_DIR=$REPO_DIR/checkpoints
+SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
+OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
+SELECTION=${1:-""}
 SEED=${SEED:-42}
-CKPT_DIR=/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints
 
-module load apptainer
+mkdir -p $REPO_DIR/logs $CKPT_DIR/sft
+
+module load apptainer/1.4.2
 
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
 
-cd $HOME/gsm8k_selection_experiment
+cd $REPO_DIR
 
 if [ -n "$SELECTION" ]; then
-    singularity exec --nv -B /orcd $HOME/verl.sif \
-        python3 scripts/02_train_sft.py --seed $SEED --nproc 1 \
+    singularity exec --nv \
+        --overlay $OVERLAY \
+        -B /orcd,/home \
+        --env PYTHONNOUSERSITE=1 \
+        $SIF \
+        python3 scripts/02_train_sft.py \
+            --seed $SEED \
+            --nproc 1 \
+            --data-dir $REPO_DIR/data \
             --checkpoints-dir $CKPT_DIR/sft \
+            --logs-dir $REPO_DIR/logs \
+            --results-dir $REPO_DIR/results \
             --selections "$SELECTION"
 else
-    singularity exec --nv -B /orcd $HOME/verl.sif \
-        python3 scripts/02_train_sft.py --seed $SEED --nproc 1 \
-            --checkpoints-dir $CKPT_DIR/sft
+    singularity exec --nv \
+        --overlay $OVERLAY \
+        -B /orcd,/home \
+        --env PYTHONNOUSERSITE=1 \
+        $SIF \
+        python3 scripts/02_train_sft.py \
+            --seed $SEED \
+            --nproc 1 \
+            --data-dir $REPO_DIR/data \
+            --checkpoints-dir $CKPT_DIR/sft \
+            --logs-dir $REPO_DIR/logs \
+            --results-dir $REPO_DIR/results
 fi

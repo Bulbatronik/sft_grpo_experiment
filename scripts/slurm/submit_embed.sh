@@ -5,12 +5,27 @@
 #SBATCH --mem=32G
 #SBATCH -c 8
 #SBATCH -p mit_normal_gpu
-#SBATCH --output=%x-%j.out
+#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%j.out
 
 # Phase 1 — embed + PCA + SFT subset selection
 # sentence-transformers benefits from GPU but runs on CPU too.
-module load apptainer
 
-cd $HOME/gsm8k_selection_experiment
-singularity exec --nv -B /orcd $HOME/verl.sif \
-    python3 scripts/01_embed_and_select_sft.py --seed 42
+REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
+SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
+OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
+SEED=${SEED:-42}
+
+mkdir -p $REPO_DIR/logs
+
+module load apptainer/1.4.2
+
+cd $REPO_DIR
+singularity exec --nv \
+    --overlay $OVERLAY \
+    -B /orcd,/home \
+    --env PYTHONNOUSERSITE=1 \
+    $SIF \
+    python3 scripts/01_embed_and_select_sft.py \
+        --seed $SEED \
+        --data-dir $REPO_DIR/data \
+        --results-dir $REPO_DIR/results
