@@ -14,13 +14,13 @@ import argparse
 import json
 import logging
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.utils.seeding import seed_everything
+from src.utils.logging import setup_file_logger
 from src.data.embed import embed_questions, fit_pca
 from src.data.select_sft import diverse_select, random_select, quantile_uniform_select
 from src.utils.plots import save_pca_variance_plot, save_sft_selection_pca_plot
@@ -33,14 +33,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BUDGETS = {"5pct": 0.05, "20pct": 0.20}
-
-
-def _setup_file_logger(log_dir: Path, tag: str) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    fh = logging.FileHandler(log_dir / f"{tag}_{ts}.log")
-    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s"))
-    logging.getLogger().addHandler(fh)
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,7 +57,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     seed_everything(args.seed)
-    _setup_file_logger(ROOT / "logs", "01_embed_and_select_sft")
+    setup_file_logger(ROOT / "logs", "01_embed_and_select_sft")
 
     data_dir = Path(args.data_dir)
     results_dir = Path(args.results_dir)
@@ -175,10 +167,10 @@ def main() -> None:
             subset.to_parquet(out_parquet, index=False)
             logger.info("Wrote %s  (%d rows)", out_parquet, len(subset))
 
-    # ── Diagnostic scatter ───────────────────────────────────────────────────
-    scatter_plot = results_dir / "plots" / "sft_selection_pca.png"
-    save_sft_selection_pca_plot(reduced, all_selections, scatter_plot)
-    logger.info("Saved SFT selection scatter: %s", scatter_plot)
+    # ── Diagnostic scatter (one file per selection) ──────────────────────────
+    plots_dir = results_dir / "plots"
+    save_sft_selection_pca_plot(reduced, all_selections, plots_dir)
+    logger.info("Saved SFT selection scatters to %s", plots_dir)
 
     logger.info(
         "Phase 1 complete. %d selections saved to %s and %s.",

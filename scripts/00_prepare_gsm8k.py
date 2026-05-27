@@ -10,7 +10,6 @@ Outputs:
 import argparse
 import logging
 import sys
-import time
 from pathlib import Path
 
 # ── project root on path ────────────────────────────────────────────────────
@@ -18,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.utils.seeding import seed_everything
+from src.utils.logging import setup_file_logger
 from src.data.prepare_gsm8k import build_rows
 
 logging.basicConfig(
@@ -26,14 +26,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
-
-
-def _setup_file_logger(log_dir: Path, tag: str) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    fh = logging.FileHandler(log_dir / f"{tag}_{ts}.log")
-    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s"))
-    logging.getLogger().addHandler(fh)
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,7 +40,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     seed_everything(args.seed)
-    _setup_file_logger(ROOT / "logs", "00_prepare_gsm8k")
+    setup_file_logger(ROOT / "logs", "00_prepare_gsm8k")
 
     data_dir = Path(args.data_dir)
     train_out = data_dir / "gsm8k_train.parquet"

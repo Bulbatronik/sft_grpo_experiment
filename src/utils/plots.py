@@ -42,33 +42,38 @@ def save_pca_variance_plot(
 def save_sft_selection_pca_plot(
     reduced: np.ndarray,
     selections: dict[str, np.ndarray],
-    out_path: str | Path,
+    out_dir: str | Path,
 ) -> None:
-    """Scatter PC1×PC2 with each selection overlaid in a distinct colour."""
-    fig, ax = plt.subplots(figsize=(9, 7))
+    """Save one PC1×PC2 scatter per selection, each highlighted against the full pool."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    ax.scatter(reduced[:, 0], reduced[:, 1], c="lightgrey", s=4, alpha=0.4, label="all", zorder=1)
+    colors = {
+        "diverse_5pct":  "#e41a1c",
+        "random_5pct":   "#377eb8",
+        "diverse_20pct": "#4daf4a",
+        "random_20pct":  "#984ea3",
+    }
 
-    colors = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628"]
-    for (name, idxs), color in zip(selections.items(), colors):
+    for name, idxs in selections.items():
+        fig, ax = plt.subplots(figsize=(9, 7))
+        ax.scatter(reduced[:, 0], reduced[:, 1], c="lightgrey", s=4, alpha=0.4, label="all", zorder=1)
         ax.scatter(
             reduced[idxs, 0],
             reduced[idxs, 1],
-            c=color,
-            s=12,
-            alpha=0.7,
-            label=name,
+            c=colors.get(name, "#ff7f00"),
+            s=18,
+            alpha=0.8,
+            label=f"{name} (n={len(idxs)})",
             zorder=2,
         )
-
-    ax.set_xlabel("PC1")
-    ax.set_ylabel("PC2")
-    ax.set_title("SFT selections in PCA space (PC1 × PC2)")
-    ax.legend(markerscale=2, fontsize=9)
-    fig.tight_layout()
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=120, bbox_inches="tight")
-    plt.close(fig)
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_title(f"SFT selection — {name}")
+        ax.legend(markerscale=2, fontsize=9)
+        fig.tight_layout()
+        fig.savefig(out_dir / f"sft_selection_pca_{name}.png", dpi=120, bbox_inches="tight")
+        plt.close(fig)
 
 
 def save_grpo_reward_scatter(

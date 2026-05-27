@@ -14,13 +14,13 @@ import argparse
 import logging
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.utils.seeding import seed_everything
+from src.utils.logging import setup_file_logger
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,14 +31,6 @@ logger = logging.getLogger(__name__)
 
 SFT_SELECTIONS = ["diverse_5pct", "random_5pct", "diverse_20pct", "random_20pct"]
 GRPO_SELECTIONS = ["variance_5pct", "random_5pct", "variance_20pct", "random_20pct"]
-
-
-def _setup_file_logger(log_dir: Path, tag: str) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    fh = logging.FileHandler(log_dir / f"{tag}_{ts}.log")
-    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s"))
-    logging.getLogger().addHandler(fh)
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,7 +103,7 @@ def stream_subprocess(cmd: list[str], log_path: Path) -> int:
 def main() -> None:
     args = parse_args()
     seed_everything(args.seed)
-    _setup_file_logger(Path(args.logs_dir), "04_train_grpo")
+    setup_file_logger(Path(args.logs_dir), "04_train_grpo")
 
     data_dir = Path(args.data_dir)
     sft_ckpt_base = Path(args.sft_checkpoints_dir)
