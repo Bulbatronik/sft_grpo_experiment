@@ -8,8 +8,8 @@ score_pool(model_path, prompts, ground_truths, n_rollouts, ...) -> list[dict]
 
 from __future__ import annotations
 
+import gc
 import logging
-from typing import Any
 
 from tqdm import tqdm
 
@@ -25,14 +25,14 @@ def score_pool(
     n_rollouts: int = 5,
     temperature: float = 0.9,
     top_p: float = 0.95,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 256,
     gpu_memory_utilization: float = 0.85,
     seed: int = 42,
 ) -> list[dict]:
     """Score each prompt with n_rollouts generations; return per-example stats.
 
     Returns a list of dicts with keys:
-        rewards, mean_reward, std_reward, pass_at_1, pass_at_k
+        rewards, mean_reward, std_reward, pass_rate, pass_at_k
     """
     try:
         from vllm import LLM, SamplingParams
@@ -70,16 +70,24 @@ def score_pool(
         ]
         mean_r = sum(rewards) / len(rewards)
         std_r = (sum((r - mean_r) ** 2 for r in rewards) / len(rewards)) ** 0.5
-        pass_at_k = 1.0 if any(r > 0 for r in rewards) else 0.0
+        # pass_rate = mean over n_rollouts binary rewards = unbiased estimator of
+        # the probability of success in a single attempt (i.e. estimated pass@1).
+        # pass_at_k = 1 if the model solved it at least once in k attempts.
         results.append(
             {
                 "rewards": rewards,
                 "mean_reward": mean_r,
                 "std_reward": std_r,
-                "pass_at_1": mean_r,
+                "pass_rate": mean_r,
                 "pass_at_k": pass_at_k,
             }
         )
 
     del llm
+    gc.collect()
+    try:
+        import torch
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
     return results

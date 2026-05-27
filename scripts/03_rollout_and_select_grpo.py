@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", default=None)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data-dir", default=str(ROOT / "data"))
-    p.add_argument("--checkpoints-dir", default="/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints/sft")
+    p.add_argument("--checkpoints-dir", default=str(ROOT / "checkpoints" / "sft"))
     p.add_argument("--results-dir", default=str(ROOT / "results"))
     p.add_argument("--logs-dir", default=str(ROOT / "logs"))
     p.add_argument("--sft-selections", nargs="+", default=SFT_SELECTIONS)
@@ -116,9 +116,21 @@ def main() -> None:
     all_stats: dict[str, dict] = {}
 
     for sft_sel in args.sft_selections:
-        ckpt_path = ckpt_base / sft_sel
-        if not ckpt_path.exists():
-            logger.warning("Checkpoint not found for %s: %s — skipping.", sft_sel, ckpt_path)
+        # Prefer the best checkpoint saved by Phase 2; fall back to the raw dir.
+        best_ckpt = ckpt_base / sft_sel / "best"
+        raw_ckpt = ckpt_base / sft_sel
+        if best_ckpt.exists():
+            ckpt_path = best_ckpt
+            logger.info("Using best checkpoint for %s: %s", sft_sel, ckpt_path)
+        elif raw_ckpt.exists():
+            ckpt_path = raw_ckpt
+            logger.warning(
+                "No 'best' checkpoint found for %s; falling back to %s. "
+                "Run Phase 2 with the updated script to enable best-model selection.",
+                sft_sel, ckpt_path,
+            )
+        else:
+            logger.warning("Checkpoint not found for %s: %s — skipping.", sft_sel, raw_ckpt)
             continue
 
         rollout_cache = data_dir / "rollouts" / f"{sft_sel}.jsonl"

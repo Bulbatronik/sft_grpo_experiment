@@ -15,7 +15,7 @@ CKPT_DIR=$REPO_DIR/checkpoints
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
 SEED=${SEED:-42}
-CANDIDATE_CAP=${CANDIDATE_CAP:-2000}
+CANDIDATE_CAP=${CANDIDATE_CAP:-0}   # 0 = score the full train pool (7,473 examples)
 
 mkdir -p $REPO_DIR/logs
 
