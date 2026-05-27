@@ -13,6 +13,7 @@ comparison plot at results/plots/sft_losses.png.
 import argparse
 import logging
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -38,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", default=str(ROOT / "configs" / "base_sft.yaml"))
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data-dir", default=str(ROOT / "data"))
-    p.add_argument("--checkpoints-dir", default="/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints/sft")
+    p.add_argument("--checkpoints-dir", default=str(ROOT / "checkpoints" / "sft"))
     p.add_argument("--logs-dir", default=str(ROOT / "logs"))
     p.add_argument("--results-dir", default=str(ROOT / "results"))
     p.add_argument("--nproc", type=int, default=1, help="GPUs per node.")
@@ -92,18 +93,58 @@ def build_verl_cmd(
     return cmd
 
 
-def parse_loss_from_log(log_path: Path) -> list[float]:
-    """Extract training loss values from a verl SFT log file."""
-    losses = []
-    # verl logs lines like: train/loss: 1.2345  or  'loss': 1.2345
-    pattern = re.compile(r"(?:train/loss|'loss')\s*[=:]\s*([0-9]+\.[0-9]+)")
+def parse_loss_from_log(log_path: Path) -> dict[str, list[tuple[int, float]]]:
+    """Extract train and val loss values (with step numbers) from a verl SFT log.
+
+    Returns {'train': [(step, loss), ...], 'val': [(step, loss), ...]}
+    Log format: step:N - ... - train/loss:X.XX ...
+                step:N - val/loss:X.XX
+    """
+    train_pattern = re.compile(r"step:(\d+).*train/loss:([0-9]+\.[0-9]+)")
+    val_pattern = re.compile(r"step:(\d+).*val/loss:([0-9]+\.[0-9]+)")
+    result: dict[str, list[tuple[int, float]]] = {"train": [], "val": []}
     if not log_path.exists():
-        return losses
+        return result
     for line in log_path.read_text().splitlines():
-        m = pattern.search(line)
+        m = train_pattern.search(line)
         if m:
-            losses.append(float(m.group(1)))
-    return losses
+            result["train"].append((int(m.group(1)), float(m.group(2))))
+        m = val_pattern.search(line)
+        if m:
+            result["val"].append((int(m.group(1)), float(m.group(2))))
+    return result
+
+
+def save_best_checkpoint(ckpt_dir: Path, val_losses: list[tuple[int, float]]) -> int | None:
+    """Keep only the checkpoint with the lowest val/loss; move it to {ckpt_dir}/best/.
+
+    Returns the best step number, or None if no val checkpoints found.
+    """
+    if not val_losses:
+        logger.warning("No val/loss values found; cannot select best checkpoint.")
+        return None
+
+    best_step, best_loss = min(val_losses, key=lambda x: x[1])
+    logger.info("Best val/loss %.4f at step %d", best_loss, best_step)
+
+    best_src = ckpt_dir / f"global_step_{best_step}"
+    best_dst = ckpt_dir / "best"
+
+    if not best_src.exists():
+        logger.warning("Checkpoint dir not found: %s — skipping best-model selection.", best_src)
+        return best_step
+
+    if best_dst.exists():
+        shutil.rmtree(best_dst)
+    shutil.copytree(best_src, best_dst)
+    logger.info("Copied best checkpoint → %s", best_dst)
+
+    for step_dir in sorted(ckpt_dir.glob("global_step_*")):
+        shutil.rmtree(step_dir)
+        logger.info("Removed intermediate checkpoint: %s", step_dir)
+
+    (ckpt_dir / "best_step.txt").write_text(str(best_step))
+    return best_step
 
 
 def stream_subprocess(cmd: list[str], log_path: Path) -> int:
@@ -168,24 +209,31 @@ def main() -> None:
             failed.append(sel)
         else:
             logger.info("SFT run %s finished successfully.", sel)
+            parsed = parse_loss_from_log(log_path)
+            save_best_checkpoint(ckpt_dir / sel, parsed["val"])
 
     if args.dry_run:
         return
 
-    # ── Plot training losses ──────────────────────────────────────────────────
-    loss_curves: dict[str, list[float]] = {}
+    # ── Plot train + val losses ───────────────────────────────────────────────
+    train_curves: dict[str, list[tuple[int, float]]] = {}
+    val_curves: dict[str, list[tuple[int, float]]] = {}
     for sel in args.selections:
         log_path = logs_dir / f"sft_{sel}.log"
-        losses = parse_loss_from_log(log_path)
-        if losses:
-            loss_curves[sel] = losses
+        parsed = parse_loss_from_log(log_path)
+        if parsed["train"]:
+            train_curves[sel] = parsed["train"]
         else:
-            logger.warning("No loss values found in %s", log_path)
+            logger.warning("No train/loss values found in %s", log_path)
+        if parsed["val"]:
+            val_curves[sel] = parsed["val"]
+        else:
+            logger.warning("No val/loss values found in %s", log_path)
 
-    if loss_curves:
+    if train_curves or val_curves:
         from src.utils.plots import save_sft_loss_plot
         out_plot = results_dir / "plots" / "sft_losses.png"
-        save_sft_loss_plot(loss_curves, out_plot)
+        save_sft_loss_plot(train_curves, val_curves, out_plot)
         logger.info("Saved loss comparison plot: %s", out_plot)
 
     if failed:

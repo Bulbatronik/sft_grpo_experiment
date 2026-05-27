@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -J gsm8k_sft
-#SBATCH -t 8:00:00
+#SBATCH -t 6:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH -c 16
 #SBATCH -p mit_normal_gpu
 #SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%j.out
@@ -26,33 +26,20 @@ module load apptainer/1.4.2
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
 
-cd $REPO_DIR
+SELECTION_ARG=""
+[ -n "$SELECTION" ] && SELECTION_ARG="--selections $SELECTION"
 
-if [ -n "$SELECTION" ]; then
-    singularity exec --nv \
-        --overlay $OVERLAY \
-        -B /orcd,/home \
-        --env PYTHONNOUSERSITE=1 \
-        $SIF \
-        python3 scripts/02_train_sft.py \
-            --seed $SEED \
-            --nproc 1 \
-            --data-dir $REPO_DIR/data \
-            --checkpoints-dir $CKPT_DIR/sft \
-            --logs-dir $REPO_DIR/logs \
-            --results-dir $REPO_DIR/results \
-            --selections "$SELECTION"
-else
-    singularity exec --nv \
-        --overlay $OVERLAY \
-        -B /orcd,/home \
-        --env PYTHONNOUSERSITE=1 \
-        $SIF \
-        python3 scripts/02_train_sft.py \
-            --seed $SEED \
-            --nproc 1 \
-            --data-dir $REPO_DIR/data \
-            --checkpoints-dir $CKPT_DIR/sft \
-            --logs-dir $REPO_DIR/logs \
-            --results-dir $REPO_DIR/results
-fi
+cd $REPO_DIR
+singularity exec --nv \
+    --overlay $OVERLAY \
+    -B /orcd,/home \
+    --env PYTHONNOUSERSITE=1 \
+    $SIF \
+    python3 scripts/02_train_sft.py \
+        --seed $SEED \
+        --nproc 1 \
+        --data-dir $REPO_DIR/data \
+        --checkpoints-dir $CKPT_DIR/sft \
+        --logs-dir $REPO_DIR/logs \
+        --results-dir $REPO_DIR/results \
+        $SELECTION_ARG

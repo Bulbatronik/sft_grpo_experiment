@@ -35,12 +35,13 @@ optim.weight_decay: 0.01
 optim.clip_grad: 1.0
 
 # ── Trainer ─────────────────────────────────────────────────────────────────
-trainer.total_epochs: 3
+trainer.total_epochs: 100 # the code will still use steps instead of epochs
+trainer.total_training_steps: 50
 trainer.project_name: gsm8k_sft_selection
 trainer.logger: "['console']"
 trainer.n_gpus_per_node: 1
 trainer.nnodes: 1
-trainer.save_freq: -1
-trainer.test_freq: -1
+trainer.save_freq: 10
+trainer.test_freq: 10
 trainer.resume_mode: disable
 # trainer.default_local_dir is set per-run to /home/usemil/orcd/scratch/sft_grpo_experiment/checkpoints/sft/<sel>

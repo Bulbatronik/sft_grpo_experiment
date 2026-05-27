@@ -1,4 +1,6 @@
 logs/
 data/
 results/
+outputs/
+checkpoints/
 __pycache__/

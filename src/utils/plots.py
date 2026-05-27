@@ -119,16 +119,29 @@ def save_grpo_reward_scatter(
 
 
 def save_sft_loss_plot(
-    loss_curves: dict[str, list[float]],
+    train_curves: dict[str, list[tuple[int, float]]],
+    val_curves: dict[str, list[tuple[int, float]]],
     out_path: str | Path,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for name, losses in loss_curves.items():
-        ax.plot(losses, label=name)
-    ax.set_xlabel("Step")
+    """Plot train and val loss curves per selection, x-axis = training step."""
+    colors = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3"]
+    all_names = sorted(set(list(train_curves) + list(val_curves)))
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, name in enumerate(all_names):
+        c = colors[i % len(colors)]
+        if name in train_curves:
+            steps, losses = zip(*train_curves[name])
+            ax.plot(steps, losses, color=c, linestyle="-", label=f"{name} train")
+        if name in val_curves:
+            steps, losses = zip(*val_curves[name])
+            ax.plot(steps, losses, color=c, linestyle="--", marker="o", markersize=4,
+                    label=f"{name} val")
+
+    ax.set_xlabel("Training step")
     ax.set_ylabel("Loss")
-    ax.set_title("SFT training loss comparison")
-    ax.legend()
+    ax.set_title("SFT train / val loss (solid=train, dashed=val)")
+    ax.legend(fontsize=8, ncol=2)
     fig.tight_layout()
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
