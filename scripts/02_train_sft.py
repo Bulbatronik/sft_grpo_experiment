@@ -328,6 +328,17 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
     trainer.save_model(str(best_dir))
     tokenizer.save_pretrained(str(best_dir))
 
+    # When LoRA was used, trainer.save_model() saves only the adapter.
+    # Also save a merged (adapter-free) full model so Phase 4 can start GRPO
+    # from a clean base without needing to load + merge at runtime.
+    if peft_config is not None:
+        merged_dir = sel_ckpt_dir / "best_merged"
+        merged_dir.mkdir(parents=True, exist_ok=True)
+        merged_model = trainer.model.merge_and_unload()
+        merged_model.save_pretrained(str(merged_dir))
+        tokenizer.save_pretrained(str(merged_dir))
+        logger.info("[%s] Merged LoRA checkpoint saved → %s", sel, merged_dir)
+
     best_ckpt_path = trainer.state.best_model_checkpoint
     if best_ckpt_path:
         best_step = int(Path(best_ckpt_path).name.split("-")[-1])

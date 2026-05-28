@@ -21,7 +21,6 @@ sys.path.insert(0, str(ROOT))
 
 from src.utils.seeding import seed_everything
 from src.utils.logging import setup_file_logger
-from src.utils.checkpoint import is_lora_checkpoint, read_adapter_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -123,32 +122,20 @@ def main() -> None:
     count = 0
 
     for sft_sel in args.sft_selections:
-        # Resolve best checkpoint directory.
+        # Use best_merged/ when SFT was trained with LoRA (Phase 2 merges the
+        # adapter into full weights there), otherwise use best/ directly.
+        merged_ckpt = sft_ckpt_base / sft_sel / "best_merged"
         best_ckpt = sft_ckpt_base / sft_sel / "best"
-        if not best_ckpt.exists():
-            logger.warning("SFT checkpoint not found: %s — skipping.", best_ckpt)
+        model_path = merged_ckpt if merged_ckpt.exists() else best_ckpt
+
+        if not model_path.exists():
+            logger.warning("SFT checkpoint not found for %s — skipping.", sft_sel)
             continue
 
-        # Detect whether the SFT checkpoint is a LoRA adapter or a full model.
-        if is_lora_checkpoint(best_ckpt):
-            adapter_cfg = read_adapter_config(best_ckpt)
-            base_model_path = adapter_cfg["base_model_name_or_path"]
-            lora_rank = adapter_cfg.get("r", 0)
-            lora_alpha = adapter_cfg.get("lora_alpha", 16)
-            logger.info("[%s] LoRA adapter detected (rank=%d). Base model: %s",
-                        sft_sel, lora_rank, base_model_path)
-            sft_model_overrides = {
-                "actor_rollout_ref.model.path": base_model_path,
-                "actor_rollout_ref.model.lora_rank": str(lora_rank),
-                "actor_rollout_ref.model.lora_alpha": str(lora_alpha),
-                "actor_rollout_ref.model.target_modules": "all-linear",
-                "actor_rollout_ref.model.adapter_path": str(best_ckpt),
-            }
-        else:
-            logger.info("[%s] Full model checkpoint detected.", sft_sel)
-            sft_model_overrides = {
-                "actor_rollout_ref.model.path": str(best_ckpt),
-            }
+        logger.info("[%s] Starting GRPO from: %s", sft_sel, model_path)
+        sft_model_overrides = {
+            "actor_rollout_ref.model.path": str(model_path),
+        }
 
         for grpo_sel in args.grpo_selections:
             count += 1
