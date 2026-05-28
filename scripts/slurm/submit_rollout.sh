@@ -23,6 +23,9 @@ module load apptainer/1.4.2
 
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
+# vLLM v1 (0.11.0) forks worker subprocesses after CUDA is already initialised,
+# which crashes. Switching to 'spawn' avoids the re-initialisation error.
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 cd $REPO_DIR
 singularity exec --nv \

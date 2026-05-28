@@ -14,6 +14,7 @@ import logging
 from tqdm import tqdm
 
 from src.reward.gsm8k_reward import compute_score
+from src.utils.checkpoint import is_lora_checkpoint, read_adapter_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,10 @@ def score_pool(
 ) -> list[dict]:
     """Score each prompt with n_rollouts generations; return per-example stats.
 
+    Accepts either a full HF model checkpoint or a LoRA adapter directory
+    (detected by the presence of adapter_config.json). LoRA adapters are loaded
+    via vLLM's native LoRA support — no merging or temp files needed.
+
     Returns a list of dicts with keys:
         rewards, mean_reward, std_reward, pass_rate, pass_at_k
     """
@@ -40,13 +45,30 @@ def score_pool(
     except ImportError as e:
         raise ImportError("vllm and transformers are required for score_pool") from e
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    llm = LLM(
-        model=model_path,
-        gpu_memory_utilization=gpu_memory_utilization,
-        seed=seed,
-        trust_remote_code=True,
-    )
+    lora_request = None
+    if is_lora_checkpoint(model_path):
+        from vllm.lora.request import LoRARequest
+        adapter_cfg = read_adapter_config(model_path)
+        base_model = adapter_cfg["base_model_name_or_path"]
+        logger.info("LoRA checkpoint detected. Base model: %s  Adapter: %s", base_model, model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        llm = LLM(
+            model=base_model,
+            enable_lora=True,
+            gpu_memory_utilization=gpu_memory_utilization,
+            seed=seed,
+            trust_remote_code=True,
+        )
+        lora_request = LoRARequest("sft_adapter", 1, model_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        llm = LLM(
+            model=model_path,
+            gpu_memory_utilization=gpu_memory_utilization,
+            seed=seed,
+            trust_remote_code=True,
+        )
+
     sampling_params = SamplingParams(
         temperature=temperature,
         top_p=top_p,
@@ -61,18 +83,15 @@ def score_pool(
     ]
 
     logger.info("Running rollouts for %d prompts (n=%d each)…", len(prompt_strs), n_rollouts)
-    outputs = llm.generate(prompt_strs, sampling_params)
+    generate_kwargs = {"lora_request": lora_request} if lora_request else {}
+    outputs = llm.generate(prompt_strs, sampling_params, **generate_kwargs)
 
     results = []
     for output, gt in tqdm(zip(outputs, ground_truths), total=len(outputs), desc="scoring"):
-        rewards = [
-            compute_score(o.text, gt) for o in output.outputs
-        ]
+        rewards = [compute_score(o.text, gt) for o in output.outputs]
         mean_r = sum(rewards) / len(rewards)
         std_r = (sum((r - mean_r) ** 2 for r in rewards) / len(rewards)) ** 0.5
-        # pass_rate = mean over n_rollouts binary rewards = unbiased estimator of
-        # the probability of success in a single attempt (i.e. estimated pass@1).
-        # pass_at_k = 1 if the model solved it at least once in k attempts.
+        pass_at_k = int(any(r > 0 for r in rewards))
         results.append(
             {
                 "rewards": rewards,

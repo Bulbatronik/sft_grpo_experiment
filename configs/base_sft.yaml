@@ -22,5 +22,10 @@ training:
   max_grad_norm: 1.0
 
 eval:
-  gen_batch_size: 8
-  max_new_tokens: 256
+  gen_batch_size: 16
+  max_new_tokens: 512
+
+lora:
+  rank: 0           # 0 = full fine-tune; >0 = LoRA (saves adapter only)
+  alpha: 16
+  target_modules: all-linear

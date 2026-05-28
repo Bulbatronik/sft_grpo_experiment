@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.utils.seeding import seed_everything
 from src.utils.logging import setup_file_logger
+from src.utils.checkpoint import is_lora_checkpoint, read_adapter_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,8 +39,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", default=str(ROOT / "configs" / "base_grpo.yaml"))
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--data-dir", default=str(ROOT / "data"))
-    p.add_argument("--sft-checkpoints-dir", default="/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints/sft")
-    p.add_argument("--grpo-checkpoints-dir", default="/orcd/scratch/orcd/008/gkim27/gsm8k_selection/checkpoints/grpo")
+    p.add_argument("--sft-checkpoints-dir", default=str(ROOT / "checkpoints" / "sft"))
+    p.add_argument("--grpo-checkpoints-dir", default=str(ROOT / "checkpoints" / "grpo"))
     p.add_argument("--logs-dir", default=str(ROOT / "logs"))
     p.add_argument("--sft-selections", nargs="+", default=SFT_SELECTIONS)
     p.add_argument("--grpo-selections", nargs="+", default=GRPO_SELECTIONS)
@@ -122,10 +123,32 @@ def main() -> None:
     count = 0
 
     for sft_sel in args.sft_selections:
-        sft_ckpt = sft_ckpt_base / sft_sel
-        if not sft_ckpt.exists():
-            logger.warning("SFT checkpoint not found: %s — skipping.", sft_ckpt)
+        # Resolve best checkpoint directory.
+        best_ckpt = sft_ckpt_base / sft_sel / "best"
+        if not best_ckpt.exists():
+            logger.warning("SFT checkpoint not found: %s — skipping.", best_ckpt)
             continue
+
+        # Detect whether the SFT checkpoint is a LoRA adapter or a full model.
+        if is_lora_checkpoint(best_ckpt):
+            adapter_cfg = read_adapter_config(best_ckpt)
+            base_model_path = adapter_cfg["base_model_name_or_path"]
+            lora_rank = adapter_cfg.get("r", 0)
+            lora_alpha = adapter_cfg.get("lora_alpha", 16)
+            logger.info("[%s] LoRA adapter detected (rank=%d). Base model: %s",
+                        sft_sel, lora_rank, base_model_path)
+            sft_model_overrides = {
+                "actor_rollout_ref.model.path": base_model_path,
+                "actor_rollout_ref.model.lora_rank": str(lora_rank),
+                "actor_rollout_ref.model.lora_alpha": str(lora_alpha),
+                "actor_rollout_ref.model.target_modules": "all-linear",
+                "actor_rollout_ref.model.adapter_path": str(best_ckpt),
+            }
+        else:
+            logger.info("[%s] Full model checkpoint detected.", sft_sel)
+            sft_model_overrides = {
+                "actor_rollout_ref.model.path": str(best_ckpt),
+            }
 
         for grpo_sel in args.grpo_selections:
             count += 1
@@ -139,7 +162,7 @@ def main() -> None:
                 continue
 
             run_overrides = {
-                "actor_rollout_ref.model.path": str(sft_ckpt),
+                **sft_model_overrides,
                 "data.train_files": str(train_parquet),
                 "trainer.experiment_name": run_name,
                 "trainer.default_local_dir": str(grpo_ckpt_base / sft_sel / grpo_sel),

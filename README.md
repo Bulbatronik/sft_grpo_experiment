@@ -56,10 +56,10 @@ make slurm-prepare
 # Phase 1 — embed + PCA + SFT selection (~20 min, 1 GPU)
 make slurm-embed
 
-# Phase 2 — 4 SFT runs (~2-4 h each, 1 GPU)
+# Phase 2 — 4 SFT runs (~40 min each, 1 GPU)
 make slurm-sft
 
-# Phase 3 — rollout scoring + GRPO selection (~1-2 h, 1 GPU)
+# Phase 3 — rollout scoring + GRPO selection (~40 min, 1 GPU)
 make slurm-rollout
 
 # Phase 4 — 16 GRPO runs (SLURM array, 4 concurrent, ~1-2 h each)
@@ -82,19 +82,18 @@ DRY_RUN=1 sbatch scripts/slurm/submit_grpo.sh
 
 ---
 
-## Expected runtime (single A100 80 GB)
+## Expected runtime (observed on mit_preemptable/mit_normal_gpu, 1 GPU)
 
 | Phase | Approximate time |
 |-------|-----------------|
 | 0 – Data preparation | < 5 min |
 | 1 – Embedding + PCA + selection | 10–20 min |
-| 2 – SFT × 4 runs | 2–4 h each (3 epochs, ~7k examples max) |
-| 3 – Rollout scoring (2,000 candidates × 4 ckpts × 5 rollouts) | 1–2 h |
-| 4 – GRPO × 16 runs | 1–2 h each (1 epoch) |
-| 5 – Evaluation (21 models × 1,319 test examples) | 1–2 h total |
+| 2 – SFT × 4 runs | ~40 min per run (~2h50m total, 50 steps, early stopping) |
+| 3 – Rollout scoring (7,473 candidates × 4 ckpts × 5 rollouts) | ~40 min total |
+| 4 – GRPO × 16 runs | ~1–2 h each (estimated) |
+| 5 – Evaluation (21 models × 1,319 test examples) | ~1 h total (estimated) |
 
-Total end-to-end: **~3–5 days** of sequential GPU time. Runs can be parallelised
-across multiple GPUs by setting `NPROC`.
+Total end-to-end: **~1–2 days** of sequential GPU time.
 
 ---
 

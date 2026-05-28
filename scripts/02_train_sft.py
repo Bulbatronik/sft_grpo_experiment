@@ -33,6 +33,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from tqdm import tqdm
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -142,7 +144,7 @@ class GSM8KAccuracyCallback(TrainerCallback):
         total = len(self.prompts)
 
         try:
-            for start in range(0, total, self.batch_size):
+            for start in tqdm(range(0, total, self.batch_size), desc="gsm8k_eval", leave=False):
                 batch_prompts = self.prompts[start : start + self.batch_size]
                 batch_gts = self.ground_truths[start : start + self.batch_size]
 
@@ -151,7 +153,7 @@ class GSM8KAccuracyCallback(TrainerCallback):
                     return_tensors="pt",
                     padding=True,
                     truncation=True,
-                    max_length=512,
+                    max_length=self.tokenizer.model_max_length,
                 ).to(device)
 
                 with torch.no_grad():
@@ -254,6 +256,19 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
         torch_dtype=torch.bfloat16,
     )
 
+    # ── LoRA ──────────────────────────────────────────────────────────────────
+    peft_config = None
+    if cfg.lora.rank > 0:
+        from peft import LoraConfig
+        peft_config = LoraConfig(
+            r=cfg.lora.rank,
+            lora_alpha=cfg.lora.alpha,
+            target_modules=cfg.lora.target_modules,
+            task_type="CAUSAL_LM",
+        )
+        logger.info("[%s] LoRA enabled: rank=%d alpha=%d target=%s",
+                    sel, cfg.lora.rank, cfg.lora.alpha, cfg.lora.target_modules)
+
     # ── Trainer ───────────────────────────────────────────────────────────────
     sft_cfg = SFTConfig(
         output_dir=str(intermediate_dir),
@@ -295,6 +310,7 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
         processing_class=tokenizer,
         train_dataset=train_ds,
         eval_dataset=val_ds,
+        peft_config=peft_config,
         callbacks=[
             EarlyStoppingCallback(
                 early_stopping_patience=cfg.training.early_stopping_patience
