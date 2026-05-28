@@ -1,47 +1,26 @@
-# Base hyperparameters shared across all four SFT runs (verl 0.8.x sft_trainer).
+# SFT training hyperparameters — loaded by scripts/02_train_sft.py via OmegaConf.
 #
-# Launch command (inside Singularity container):
-#   torchrun --standalone --nnodes=1 --nproc-per-node=<N> \
-#       -m verl.trainer.sft_trainer <key>=<value> ...
-#
-# Per-run overrides (data.train_files, trainer.experiment_name,
-# trainer.default_local_dir) are appended by scripts/02_train_sft.py.
+# CLI dotlist overrides are supported at launch time, e.g.:
+#   python3 scripts/02_train_sft.py training.lr=1e-4 eval.gen_batch_size=16
 
-# ── Data ────────────────────────────────────────────────────────────────────
-data.val_files: /home/usemil/orcd/scratch/sft_grpo_experiment/data/gsm8k_test.parquet
-data.messages_key: messages
-data.max_length: 1024
-data.train_batch_size: 128
-data.micro_batch_size_per_gpu: 4
-data.use_dynamic_bsz: true
-data.max_token_len_per_gpu: 4096
-data.truncation: error
-data.pad_mode: no_padding
-data.ignore_input_ids_mismatch: true
+model:
+  name: Qwen/Qwen2.5-0.5B-Instruct
+  max_seq_length: 1024
 
-# ── Model ────────────────────────────────────────────────────────────────────
-model.path: Qwen/Qwen2.5-0.5B-Instruct
-model.use_remove_padding: true
+training:
+  max_steps: 50
+  eval_steps: 10
+  save_steps: 10
+  early_stopping_patience: 3
+  # Batch size: per_device × gradient_accumulation × n_gpus = 4 × 32 × 1 = 128
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 32
+  lr: 2.0e-5
+  lr_scheduler: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  max_grad_norm: 1.0
 
-# ── Engine / backend ─────────────────────────────────────────────────────────
-engine: fsdp
-
-# ── Optimizer ───────────────────────────────────────────────────────────────
-optim: fsdp
-optim.lr: 2e-5
-optim.lr_scheduler_type: cosine
-optim.lr_warmup_steps_ratio: 0.03
-optim.weight_decay: 0.01
-optim.clip_grad: 1.0
-
-# ── Trainer ─────────────────────────────────────────────────────────────────
-trainer.total_epochs: 100 # the code will still use steps instead of epochs
-trainer.total_training_steps: 50
-trainer.project_name: gsm8k_sft_selection
-trainer.logger: "['console']"
-trainer.n_gpus_per_node: 1
-trainer.nnodes: 1
-trainer.save_freq: 10
-trainer.test_freq: 10
-trainer.resume_mode: disable
-# trainer.default_local_dir is set per-run to /home/usemil/orcd/scratch/sft_grpo_experiment/checkpoints/sft/<sel>
+eval:
+  gen_batch_size: 8
+  max_new_tokens: 256

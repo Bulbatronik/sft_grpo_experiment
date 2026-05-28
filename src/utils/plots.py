@@ -148,6 +148,36 @@ def save_sft_loss_plot(
     plt.close(fig)
 
 
+def save_sft_accuracy_plot(
+    acc_curves: dict[str, list[tuple[int, float]]],
+    out_path: str | Path,
+) -> None:
+    """Plot validation accuracy curves per SFT selection, x-axis = training step."""
+    colors = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3"]
+    names = sorted(acc_curves)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, name in enumerate(names):
+        c = colors[i % len(colors)]
+        steps, accs = zip(*acc_curves[name])
+        ax.plot(
+            steps, accs,
+            color=c, linestyle="-", marker="o", markersize=5,
+            label=name,
+        )
+
+    ax.set_xlabel("Training step")
+    ax.set_ylabel("Validation accuracy")
+    ax.set_title("SFT validation accuracy (greedy, exact-match)")
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
+    ax.legend(fontsize=8, ncol=2)
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    fig.tight_layout()
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 def save_final_accuracy_bar(
     results: dict,
     base_acc: float,

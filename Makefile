@@ -29,12 +29,12 @@ embed:
 sft:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
 	$(SINGULARITY) python3 scripts/02_train_sft.py \
+		--config $(PWD)/configs/base_sft.yaml \
 		--seed $(SEED) \
 		--data-dir $(DATA_DIR) \
 		--checkpoints-dir $(CKPT_DIR)/sft \
 		--logs-dir $(LOGS_DIR) \
-		--results-dir $(RESULTS) \
-		--nproc $(NPROC)
+		--results-dir $(RESULTS)
 
 rollout:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
@@ -108,7 +108,7 @@ help:
 	@echo "Direct execution targets (interactive GPU session):"
 	@echo "  prepare   Phase 0: download GSM8K + write parquets (dataval_env conda)"
 	@echo "  embed     Phase 1: embed + PCA + SFT selection (Singularity)"
-	@echo "  sft       Phase 2: 4 SFT runs via verl (Singularity)"
+	@echo "  sft       Phase 2: 4 SFT runs via TRL SFTTrainer (Singularity)"
 	@echo "  rollout   Phase 3: rollout scoring + GRPO selection (Singularity)"
 	@echo "  grpo      Phase 4: 16 GRPO runs via verl (Singularity)"
 	@echo "  grpo-dry  Phase 4 smoke test (--dry-run, 20 steps)"
@@ -120,7 +120,7 @@ help:
 	@echo "  (grpo uses --array=0-15%4 for 16 runs, 4 concurrent)"
 	@echo ""
 	@echo "Variables (override with VAR=val):"
-	@echo "  SEED=$(SEED)  NPROC=$(NPROC)"
+	@echo "  SEED=$(SEED)"
 	@echo "  SIF=$(SIF)"
 	@echo "  OVERLAY=$(OVERLAY)"
 	@echo "  CONDA_PYTHON=$(CONDA_PYTHON)"
