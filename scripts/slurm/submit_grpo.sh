@@ -6,11 +6,11 @@
 #SBATCH --mem=64G                      # RAM per task
 #SBATCH -c 16                          # CPU cores per task
 #SBATCH -p mit_normal_gpu              # partition / queue
-#SBATCH --array=0-15%4                 # 16 tasks (0–15), at most 4 running at once
+#SBATCH --array=0-15%2                 # 16 tasks (0–15), at most 2 running at once
 #SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%A_%a.out
 #                                        %x=job name  %A=array job ID  %a=task index
 
-# Phase 4 — GRPO training (16 runs via SLURM array, up to 4 concurrent).
+# Phase 4 — GRPO training (16 runs via SLURM array, up to 2 concurrent).
 # Array index 0-15 maps to all 16 (sft_sel, grpo_sel) combinations.
 # To smoke-test: DRY_RUN=1 sbatch submit_grpo.sh
 
@@ -31,8 +31,8 @@ SFT_SELS=("diverse_5pct" "random_5pct" "diverse_20pct" "random_20pct")
 GRPO_SELS=("variance_5pct" "random_5pct" "variance_20pct" "random_20pct")
 
 IDX=${SLURM_ARRAY_TASK_ID:-0}
-SFT_IDX=$((IDX / 4))
-GRPO_IDX=$((IDX % 4))
+SFT_IDX=$((IDX / 4)) # because there are 4 SFT selections
+GRPO_IDX=$((IDX % 4)) # because there are 4 GRPO selections
 SFT_SEL=${SFT_SELS[$SFT_IDX]}
 GRPO_SEL=${GRPO_SELS[$GRPO_IDX]}
 

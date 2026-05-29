@@ -6,6 +6,14 @@
 # trainer.experiment_name, trainer.default_local_dir) are appended by
 # scripts/04_train_grpo.py.
 
+# ── Reward ───────────────────────────────────────────────────────────────────
+# verl 0.8 API: reward function is loaded from a file via custom_reward_function;
+# the 'naive' reward manager calls it for each rollout.
+reward.custom_reward_function.path: /orcd/scratch/orcd/006/usemil/sft_grpo_experiment/src/reward/gsm8k_reward.py
+reward.custom_reward_function.name: compute_score
+reward.reward_manager.source: register
+reward.reward_manager.name: naive
+
 # ── Algorithm ────────────────────────────────────────────────────────────────
 algorithm.adv_estimator: grpo
 algorithm.use_kl_in_reward: False
@@ -67,5 +75,6 @@ trainer.project_name: gsm8k_grpo_selection
 trainer.logger: '["console"]'
 trainer.n_gpus_per_node: 1
 trainer.nnodes: 1
-trainer.save_freq: -1
+trainer.save_freq: 10
+trainer.max_actor_ckpt_to_keep: 3
 trainer.test_freq: 10

@@ -71,14 +71,10 @@ def load_base_config(config_path: Path) -> dict[str, str]:
 def build_verl_cmd(
     base_overrides: dict[str, str],
     run_overrides: dict[str, str],
-    custom_reward_fn: str,
 ) -> list[str]:
     all_overrides = {**base_overrides, **run_overrides}
     kv_args = [f"{k}={v}" for k, v in all_overrides.items()]
-    cmd = [
-        sys.executable, "-m", "verl.trainer.main_ppo",
-        f"reward_model.reward_manager={custom_reward_fn}",
-    ] + kv_args
+    cmd = [sys.executable, "-m", "verl.trainer.main_ppo"] + kv_args
     return cmd
 
 
@@ -115,7 +111,6 @@ def main() -> None:
         raise FileNotFoundError(f"Base config not found: {base_config_path}")
 
     base_overrides = load_base_config(base_config_path)
-    reward_fn = "src.reward.gsm8k_reward.compute_score"
 
     failed = []
     total = len(args.sft_selections) * len(args.grpo_selections)
@@ -157,7 +152,7 @@ def main() -> None:
             if args.dry_run:
                 run_overrides["trainer.total_training_steps"] = "20"
 
-            cmd = build_verl_cmd(base_overrides, run_overrides, reward_fn)
+            cmd = build_verl_cmd(base_overrides, run_overrides)
             log_path = logs_dir / f"{run_name}.log"
 
             if args.dry_run:
