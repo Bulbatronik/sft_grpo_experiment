@@ -76,5 +76,5 @@ trainer.logger: '["console"]'
 trainer.n_gpus_per_node: 1
 trainer.nnodes: 1
 trainer.save_freq: 10
-trainer.max_actor_ckpt_to_keep: 3
+trainer.max_actor_ckpt_to_keep: 1
 trainer.test_freq: 10

@@ -1,37 +1,54 @@
 #!/bin/bash
+# ── SLURM resource request ────────────────────────────────────────────────────
 #SBATCH -J gsm8k_sft
-#SBATCH -t 24:00:00
+#SBATCH -t 4:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH -c 16
-#SBATCH -p mit_preemptable # mit_normal_gpu
-#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%j.out
+#SBATCH -p mit_preemptable
+#SBATCH --array=0-3
+#   ^─ 4 independent tasks, one per SFT data selection, all running in parallel.
+#      Each task gets its own GPU and log file.
+#SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%A_%a.out
 
-# Phase 2 — SFT training (4 runs, sequential).
-# Usage: sbatch submit_sft.sh [selection_name] [dotlist_overrides...]
-#   selection_name  : one of diverse_5pct, random_5pct, diverse_20pct, random_20pct
-#                     (omit to run all four sequentially)
-#   dotlist_overrides: OmegaConf-style overrides forwarded to the config, e.g.:
-#                     sbatch submit_sft.sh "" training.lr=1e-4 training.max_steps=30
+# Phase 2 — SFT training (4 selections as a SLURM array).
+#
+# SLURM_ARRAY_TASK_ID maps to one SFT data selection:
+#   0 → diverse_5pct
+#   1 → random_5pct
+#   2 → diverse_20pct
+#   3 → random_20pct
+#
+# Environment variables (set by Makefile or manually):
+#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen2.5-0.5B-Instruct)
+#   MODEL_NAME  short name used in paths   (default: basename of MODEL)
+#   SEED        random seed                (default: 42)
 
 REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
-CKPT_DIR=$REPO_DIR/checkpoints
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
-SELECTION=${1:-""}
-SEED=${SEED:-42}
-# All remaining positional args are forwarded as dotlist overrides.
-shift 1 2>/dev/null; OVERRIDES="$@"
 
-mkdir -p $REPO_DIR/logs $CKPT_DIR/sft
+MODEL=${MODEL:-"Qwen/Qwen2.5-0.5B-Instruct"}
+MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
+SEED=${SEED:-42}
+
+CKPT_DIR=$REPO_DIR/checkpoints/$MODEL_NAME
+LOGS_DIR=$REPO_DIR/logs/$MODEL_NAME
+
+# ── Map array task index → SFT data selection ─────────────────────────────────
+SFT_SELS=("diverse_5pct" "random_5pct" "diverse_20pct" "random_20pct")
+
+IDX=${SLURM_ARRAY_TASK_ID:-0}
+SFT_SEL=${SFT_SELS[$IDX]}
+
+echo "Array task $IDX: SFT=$SFT_SEL  MODEL=$MODEL_NAME"
+
+mkdir -p $LOGS_DIR $CKPT_DIR/sft
 
 module load apptainer/1.4.2
 
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
-
-SELECTION_ARG=""
-[ -n "$SELECTION" ] && SELECTION_ARG="--selections $SELECTION"
 
 cd $REPO_DIR
 singularity exec --nv \
@@ -41,10 +58,10 @@ singularity exec --nv \
     $SIF \
     python3 scripts/02_train_sft.py \
         --config $REPO_DIR/configs/base_sft.yaml \
+        model.name=$MODEL \
         --seed $SEED \
         --data-dir $REPO_DIR/data \
         --checkpoints-dir $CKPT_DIR/sft \
-        --logs-dir $REPO_DIR/logs \
-        --results-dir $REPO_DIR/results \
-        $SELECTION_ARG \
-        $OVERRIDES
+        --logs-dir $LOGS_DIR \
+        --results-dir $REPO_DIR/results/$MODEL_NAME \
+        --selections "$SFT_SEL"

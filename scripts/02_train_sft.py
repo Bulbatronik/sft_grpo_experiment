@@ -9,18 +9,20 @@ Individual values can be overridden from the command line using dotlist syntax:
 
 Infrastructure arguments (paths, seed, selections) are passed as regular flags.
 
-New capabilities over the previous verl-based version:
-  - eval_on_start: evaluates before any training step (step 0)
-  - EarlyStoppingCallback: stops when eval loss stops improving
+  - eval_on_start: evaluates accuracy before any training step (step 0)
+  - EarlyStoppingCallback: stops when val accuracy stops improving
   - GSM8KAccuracyCallback: greedy-decodes the val set at every eval step
-    and reports exact-match accuracy against the ground-truth #### answer
+    and reports exact-match accuracy; logged as eval/acc and used for
+    best-model selection via metric_for_best_model="eval_acc"
 
 Output plots (results/plots/):
   sft_losses.png    — train + val CE-loss curves
   sft_accuracy.png  — val accuracy curve per selection
 
 Checkpoint layout (compatible with Phase 4):
-  checkpoints/sft/<sel>/best/   ← HuggingFace model saved here
+  checkpoints/sft/<sel>/best/          ← LoRA adapter (if lora.rank > 0)
+                                           or full model (if lora.rank == 0)
+  checkpoints/sft/<sel>/best_merged/   ← full merged model (LoRA only, used by GRPO)
   checkpoints/sft/<sel>/best_step.txt
 """
 
@@ -127,7 +129,7 @@ class GSM8KAccuracyCallback(TrainerCallback):
 
         logger.info("GSM8KAccuracyCallback ready: %d eval examples.", len(self.prompts))
 
-    def on_evaluate(self, args, state, control, model=None, **kwargs):
+    def on_evaluate(self, args, state, control, model=None, metrics=None, **kwargs):
         if model is None:
             return
 
@@ -178,8 +180,10 @@ class GSM8KAccuracyCallback(TrainerCallback):
 
         accuracy = correct / total
         self.history.append((state.global_step, accuracy))
+        if metrics is not None:
+            metrics["eval_acc"] = accuracy
         logger.info(
-            "step:%d - eval/gsm8k_accuracy:%.4f (%d/%d correct)",
+            "step:%d - eval/acc:%.4f (%d/%d correct)",
             state.global_step, accuracy, int(correct), total,
         )
 
@@ -295,8 +299,8 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
         save_strategy="steps",
         save_steps=cfg.training.save_steps,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
+        metric_for_best_model="eval_acc",
+        greater_is_better=True,
         # Data
         dataset_text_field="text",
         # Reproducibility
@@ -312,10 +316,10 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
         eval_dataset=val_ds,
         peft_config=peft_config,
         callbacks=[
+            accuracy_cb,  # must run first so eval_acc is in metrics before EarlyStoppingCallback reads it
             EarlyStoppingCallback(
                 early_stopping_patience=cfg.training.early_stopping_patience
             ),
-            accuracy_cb,
         ],
     )
 

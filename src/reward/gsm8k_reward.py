@@ -21,7 +21,7 @@ def extract_answer(solution_str: str) -> str | None:
     return matches[-1].replace(",", "").replace("$", "")
 
 
-def compute_score(solution_str: str, ground_truth: str) -> float:
+def compute_score(solution_str: str, ground_truth: str, **kwargs) -> float:
     """Binary reward: 1.0 if extracted answer matches ground truth, else 0.0."""
     answer = extract_answer(solution_str)
     if answer is None:

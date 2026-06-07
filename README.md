@@ -10,8 +10,7 @@ Investigating two data-selection hypotheses for math reasoning fine-tuning on
    rollouts provide more learning signal than random selection for GRPO.
 
 All 16 combinations of (SFT selection × GRPO selection) are compared at 5% and
-20% data budgets against random baselines, plus a base model and SFT-only
-reference lines.
+20% data budgets against random baselines.
 
 ---
 
@@ -32,6 +31,11 @@ reference lines.
 |------|-----------|
 | Base / SFT / GRPO | `Qwen/Qwen2.5-0.5B-Instruct` |
 | Embedding (diversity) | `sentence-transformers/all-MiniLM-L6-v2` |
+
+SFT uses LoRA (rank 64) via TRL; GRPO uses LoRA (rank 64) via verl FSDP.
+This keeps checkpoint sizes small and makes the pipeline feasible for larger
+models (e.g. 8B) without changing the code — only `model.name` and batch
+sizes in the configs need updating.
 
 ---
 
@@ -65,19 +69,19 @@ make slurm-rollout
 # Phase 4 — 16 GRPO runs (SLURM array, 4 concurrent, ~1-2 h each)
 make slurm-grpo
 
-# Phase 5 — evaluate all 21 models (~1-2 h, 1 GPU)
-make slurm-eval
+# Phase 5 — plot accuracy training curves (CPU, seconds)
+make plot
 ```
 
 Monitor jobs with `squeue --me`. Logs go to `logs/`.
 
-All intermediate outputs are cached; re-running a phase is safe. Use `--force` to recompute.
+All intermediate outputs are cached; re-running a phase is safe.
 
 ### Smoke-testing GRPO
 
 ```bash
 # Run 20 steps only to check configs before committing hours of compute
-DRY_RUN=1 sbatch scripts/slurm/submit_grpo.sh
+make grpo-dry
 ```
 
 ---
@@ -88,10 +92,10 @@ DRY_RUN=1 sbatch scripts/slurm/submit_grpo.sh
 |-------|-----------------|
 | 0 – Data preparation | < 5 min |
 | 1 – Embedding + PCA + selection | 10–20 min |
-| 2 – SFT × 4 runs | ~40 min per run (~2h50m total, 50 steps, early stopping) |
+| 2 – SFT × 4 runs | ~40 min per run (~2h total, 50 steps, early stopping by val accuracy) |
 | 3 – Rollout scoring (7,473 candidates × 4 ckpts × 5 rollouts) | ~40 min total |
-| 4 – GRPO × 16 runs | ~1–2 h each (estimated) |
-| 5 – Evaluation (21 models × 1,319 test examples) | ~1 h total (estimated) |
+| 4 – GRPO × 16 runs | ~1–2 h each (50 steps, val accuracy logged every 10 steps) |
+| 5 – Plot | < 1 min |
 
 Total end-to-end: **~1–2 days** of sequential GPU time.
 
@@ -101,29 +105,38 @@ Total end-to-end: **~1–2 days** of sequential GPU time.
 
 ```
 results/
-├── plots/
-│   ├── pca_variance.png          # Explained variance curve
-│   ├── sft_selection_pca.png     # PC1×PC2 scatter of all selections
-│   ├── sft_losses.png            # Training loss across 4 SFT runs
-│   ├── grpo_reward_scatter_*.png # mean vs std reward scatter per SFT ckpt
-│   └── final_accuracy.png        # Grouped bar chart (main result)
-├── eval/
-│   └── {model_id}.json           # Per-model accuracy + per-example correctness
-├── grpo_selection_stats.json     # Reward distribution stats for GRPO selections
-├── summary.csv                   # Machine-readable 4×4 table
-└── summary.md                    # Human-readable results table
+└── plots/
+    ├── pca_variance.png              # Explained variance curve
+    ├── sft_selection_pca.png         # PC1×PC2 scatter of all selections
+    ├── sft_losses.png                # Training loss across 4 SFT runs
+    ├── grpo_reward_scatter_*.png     # mean vs std reward scatter per SFT ckpt
+    ├── curves_<sft_sel>.png          # SFT→GRPO accuracy curve per SFT selection
+    └── curves_all.png                # All 4 SFT + 16 GRPO branches combined
 ```
 
-### Reading `results/summary.md`
+The `curves_*.png` plots are the primary result. X-axis 0–100: SFT training
+steps on the left, GRPO steps on the right (branching from the best SFT
+checkpoint). Color = SFT data selection; line style = GRPO data selection.
 
-The 4×4 table shows **greedy test accuracy** for each (SFT strategy, GRPO
-strategy) combination. Higher is better. Reference lines at the bottom show
-the base model and SFT-only accuracies.
+Validation accuracy during GRPO is logged directly to `logs/` by verl against
+the GSM8K test set (`data/gsm8k_test.parquet`) every 10 steps — no separate
+evaluation pass is needed.
 
-A cell that is **notably higher than its row's random baseline** supports the
-GRPO variance hypothesis for that SFT initialisation; a column that is higher
-than the random column supports the SFT diversity hypothesis for that GRPO
-regime.
+---
+
+## Checkpoint layout
+
+```
+checkpoints/
+├── sft/
+│   └── <sft_sel>/
+│       ├── best/          ← LoRA adapter (PEFT format)
+│       ├── best_merged/   ← full merged model (used as GRPO starting point)
+│       └── best_step.txt
+└── grpo/
+    └── <sft_sel>/<grpo_sel>/
+        └── global_step_<N>/   ← verl checkpoint (base + LoRA, last step only)
+```
 
 ---
 
@@ -132,8 +145,8 @@ regime.
 ```
 sft_grpo_experiment/
 ├── configs/
-│   ├── base_sft.yaml      shared SFT hyperparameters
-│   ├── base_grpo.yaml     shared GRPO hyperparameters
+│   ├── base_sft.yaml      shared SFT hyperparameters (LoRA rank, lr, steps)
+│   ├── base_grpo.yaml     shared GRPO hyperparameters (LoRA rank, batch, steps)
 │   └── runs/              per-run generated overrides
 ├── data/
 │   ├── gsm8k_{train,test}.parquet
@@ -147,10 +160,9 @@ sft_grpo_experiment/
 │   ├── data/              prepare_gsm8k, embed, select_sft, select_grpo
 │   ├── reward/            gsm8k_reward (shared between rollout + verl)
 │   ├── rollout/           score_pool (vLLM inference)
-│   ├── eval/              test_eval
 │   └── utils/             seeding, plots
-├── scripts/               00–05 pipeline scripts
+├── scripts/               00–04, 07 pipeline scripts
 ├── checkpoints/           SFT and GRPO model weights
 ├── logs/                  per-run log files
-└── results/               plots, eval JSONs, summary table
+└── results/               plots
 ```

@@ -9,22 +9,31 @@
 
 # Phase 3 — rollout scoring + GRPO subset selection.
 # Scores each SFT checkpoint against a candidate pool using vLLM.
+#
+# Environment variables (set by Makefile or manually):
+#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen2.5-0.5B-Instruct)
+#   MODEL_NAME  short name used in paths   (default: basename of MODEL)
+#   SEED        random seed                (default: 42)
 
 REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
-CKPT_DIR=$REPO_DIR/checkpoints
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
-SEED=${SEED:-42}
-CANDIDATE_CAP=${CANDIDATE_CAP:-0}   # 0 = score the full train pool (7,473 examples)
 
-mkdir -p $REPO_DIR/logs
+MODEL=${MODEL:-"Qwen/Qwen2.5-0.5B-Instruct"}
+MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
+SEED=${SEED:-42}
+CANDIDATE_CAP=${CANDIDATE_CAP:-0}   # 0 = score the full train pool
+
+CKPT_DIR=$REPO_DIR/checkpoints/$MODEL_NAME
+LOGS_DIR=$REPO_DIR/logs/$MODEL_NAME
+RESULTS=$REPO_DIR/results/$MODEL_NAME
+
+mkdir -p $LOGS_DIR
 
 module load apptainer/1.4.2
 
 export CC=/usr/bin/gcc
 export TRITON_CC=/usr/bin/gcc
-# vLLM v1 (0.11.0) forks worker subprocesses after CUDA is already initialised,
-# which crashes. Switching to 'spawn' avoids the re-initialisation error.
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 cd $REPO_DIR
@@ -38,5 +47,5 @@ singularity exec --nv \
         --candidate-cap $CANDIDATE_CAP \
         --data-dir $REPO_DIR/data \
         --checkpoints-dir $CKPT_DIR/sft \
-        --results-dir $REPO_DIR/results \
-        --logs-dir $REPO_DIR/logs
+        --results-dir $RESULTS \
+        --logs-dir $LOGS_DIR

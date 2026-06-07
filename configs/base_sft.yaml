@@ -26,6 +26,6 @@ eval:
   max_new_tokens: 512
 
 lora:
-  rank: 0           # 0 = full fine-tune; >0 = LoRA (saves adapter only)
+  rank: 64          # 0 = full fine-tune; >0 = LoRA (saves adapter only)
   alpha: 16
   target_modules: all-linear
