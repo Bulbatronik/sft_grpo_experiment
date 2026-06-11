@@ -14,34 +14,42 @@
 # Phase 2 — SFT training (4 selections as a SLURM array).
 #
 # SLURM_ARRAY_TASK_ID maps to one SFT data selection:
-#   0 → diverse_5pct
-#   1 → random_5pct
+#   0 → diverse_10pct
+#   1 → random_10pct
 #   2 → diverse_20pct
 #   3 → random_20pct
 #
 # Environment variables (set by Makefile or manually):
-#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen2.5-0.5B-Instruct)
+#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen3-1.7B)
 #   MODEL_NAME  short name used in paths   (default: basename of MODEL)
+#   SFT_CONFIG  path to SFT config YAML    (default: configs/sft_<MODEL_NAME>.yaml)
 #   SEED        random seed                (default: 42)
 
 REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
 
-MODEL=${MODEL:-"Qwen/Qwen2.5-0.5B-Instruct"}
+MODEL=${MODEL:-"Qwen/Qwen3-1.7B"}
 MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
 SEED=${SEED:-42}
 
-CKPT_DIR=$REPO_DIR/checkpoints/$MODEL_NAME
-LOGS_DIR=$REPO_DIR/logs/$MODEL_NAME
+RUN_DIR=$MODEL_NAME/seed$SEED
+DATA_DIR=$REPO_DIR/data/$RUN_DIR
+CKPT_DIR=$REPO_DIR/checkpoints/$RUN_DIR
+LOGS_DIR=$REPO_DIR/logs/$RUN_DIR
+RESULTS=$REPO_DIR/results/$RUN_DIR
+
+# Resolve config: env var → model-specific config → base fallback
+SFT_CONFIG=${SFT_CONFIG:-"$REPO_DIR/configs/sft_${MODEL_NAME}.yaml"}
+[ -f "$SFT_CONFIG" ] || SFT_CONFIG="$REPO_DIR/configs/base_sft.yaml"
 
 # ── Map array task index → SFT data selection ─────────────────────────────────
-SFT_SELS=("diverse_5pct" "random_5pct" "diverse_20pct" "random_20pct")
+SFT_SELS=("diverse_10pct" "random_10pct" "diverse_20pct" "random_20pct")
 
 IDX=${SLURM_ARRAY_TASK_ID:-0}
 SFT_SEL=${SFT_SELS[$IDX]}
 
-echo "Array task $IDX: SFT=$SFT_SEL  MODEL=$MODEL_NAME"
+echo "Array task $IDX: SFT=$SFT_SEL  MODEL=$MODEL_NAME  CONFIG=$(basename $SFT_CONFIG)"
 
 mkdir -p $LOGS_DIR $CKPT_DIR/sft
 
@@ -57,11 +65,11 @@ singularity exec --nv \
     --env PYTHONNOUSERSITE=1 \
     $SIF \
     python3 scripts/02_train_sft.py \
-        --config $REPO_DIR/configs/base_sft.yaml \
+        --config $SFT_CONFIG \
         model.name=$MODEL \
         --seed $SEED \
-        --data-dir $REPO_DIR/data \
+        --data-dir $DATA_DIR \
         --checkpoints-dir $CKPT_DIR/sft \
         --logs-dir $LOGS_DIR \
-        --results-dir $REPO_DIR/results/$MODEL_NAME \
+        --results-dir $RESULTS \
         --selections "$SFT_SEL"

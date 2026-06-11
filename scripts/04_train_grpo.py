@@ -29,8 +29,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SFT_SELECTIONS = ["diverse_5pct", "random_5pct", "diverse_20pct", "random_20pct"]
-GRPO_SELECTIONS = ["variance_5pct", "random_5pct", "variance_20pct", "random_20pct"]
+SFT_SELECTIONS = ["diverse_10pct", "random_10pct", "diverse_20pct", "random_20pct"]
+GRPO_SELECTIONS = ["variance_10pct", "random_10pct", "variance_20pct", "random_20pct"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -146,6 +146,9 @@ def main() -> None:
             run_overrides = {
                 **sft_model_overrides,
                 "data.train_files": str(train_parquet),
+                # Overrides the static path in the config so the val set always
+                # comes from this run's (model, seed)-namespaced data dir.
+                "data.val_files": str(data_dir / "gsm8k_test.parquet"),
                 "trainer.experiment_name": run_name,
                 "trainer.default_local_dir": str(grpo_ckpt_base / sft_sel / grpo_sel),
             }

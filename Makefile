@@ -1,12 +1,24 @@
-MODEL      ?= Qwen/Qwen2.5-0.5B-Instruct
-MODEL_NAME ?= $(notdir $(MODEL))   # e.g. Qwen2.5-0.5B-Instruct
+MODEL      ?= Qwen/Qwen3-1.7B
+# Short name used in paths, e.g. Qwen3-1.7B.
+# NOTE: no inline comment here — make keeps the whitespace before a trailing
+# comment, which would corrupt every derived path.
+MODEL_NAME ?= $(notdir $(MODEL))
+
+# Per-model config files; override with SFT_CONFIG=... or GRPO_CONFIG=...
+SFT_CONFIG  ?= $(PWD)/configs/sft_$(MODEL_NAME).yaml
+GRPO_CONFIG ?= $(PWD)/configs/grpo_$(MODEL_NAME).yaml
 
 SEED       ?= 42
 NPROC      ?= 1
-DATA_DIR   ?= $(PWD)/data
-CKPT_DIR   ?= $(PWD)/checkpoints/$(MODEL_NAME)
-LOGS_DIR   ?= $(PWD)/logs/$(MODEL_NAME)
-RESULTS    ?= $(PWD)/results/$(MODEL_NAME)
+
+# All artifacts — including seed-dependent data selections — are namespaced by
+# (model, seed) so repeated runs never clobber each other. Raw GSM8K parquets
+# are tiny and simply re-created per run dir by `make slurm-prepare`.
+RUN_DIR    ?= $(MODEL_NAME)/seed$(SEED)
+DATA_DIR   ?= $(PWD)/data/$(RUN_DIR)
+CKPT_DIR   ?= $(PWD)/checkpoints/$(RUN_DIR)
+LOGS_DIR   ?= $(PWD)/logs/$(RUN_DIR)
+RESULTS    ?= $(PWD)/results/$(RUN_DIR)
 
 # CPU-only phases use the dataval_env conda environment.
 CONDA_PYTHON ?= $(HOME)/.conda/envs/dataval_env/bin/python3
@@ -32,7 +44,7 @@ embed:
 sft:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
 	$(SINGULARITY) python3 scripts/02_train_sft.py \
-		--config $(PWD)/configs/base_sft.yaml \
+		--config $(SFT_CONFIG) \
 		model.name=$(MODEL) \
 		--seed $(SEED) \
 		--data-dir $(DATA_DIR) \
@@ -52,6 +64,7 @@ rollout:
 grpo:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
 	$(SINGULARITY) python3 scripts/04_train_grpo.py \
+		--config $(GRPO_CONFIG) \
 		--seed $(SEED) \
 		--data-dir $(DATA_DIR) \
 		--sft-checkpoints-dir $(CKPT_DIR)/sft \
@@ -61,6 +74,7 @@ grpo:
 grpo-dry:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
 	$(SINGULARITY) python3 scripts/04_train_grpo.py \
+		--config $(GRPO_CONFIG) \
 		--seed $(SEED) \
 		--data-dir $(DATA_DIR) \
 		--sft-checkpoints-dir $(CKPT_DIR)/sft \
@@ -74,32 +88,34 @@ plot:
 		--results-dir $(RESULTS)
 
 # ── SLURM submission ─────────────────────────────────────────────────────────
-# MODEL and MODEL_NAME are forwarded as env vars so scripts derive their paths.
+# MODEL, MODEL_NAME, SFT_CONFIG, and GRPO_CONFIG are forwarded as env vars so
+# scripts derive their paths and load the right hyperparameter files.
 # --output overrides the #SBATCH directive, routing SLURM logs to the
 # model-specific subdirectory so the plot script finds them by glob.
 
 slurm-prepare:
 	mkdir -p $(LOGS_DIR)
+	SEED="$(SEED)" DATA_DIR="$(DATA_DIR)" \
 	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_prepare.sh
 
 slurm-embed:
 	mkdir -p $(LOGS_DIR)
-	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" \
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" \
 	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_embed.sh
 
 slurm-sft:
 	mkdir -p $(LOGS_DIR)
-	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" \
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" SFT_CONFIG="$(SFT_CONFIG)" \
 	sbatch --output=$(LOGS_DIR)/%x-%A_%a.out scripts/slurm/submit_sft.sh
 
 slurm-rollout:
 	mkdir -p $(LOGS_DIR)
-	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" \
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" \
 	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_rollout.sh
 
 slurm-grpo:
 	mkdir -p $(LOGS_DIR)
-	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" \
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" GRPO_CONFIG="$(GRPO_CONFIG)" \
 	sbatch --output=$(LOGS_DIR)/%x-%A_%a.out scripts/slurm/submit_grpo.sh
 
 # ── Maintenance ──────────────────────────────────────────────────────────────
@@ -115,9 +131,15 @@ clean:
 help:
 	@echo "Usage:  make <target> [MODEL=<hf_model_id>] [SEED=<n>]"
 	@echo ""
-	@echo "  MODEL defaults to Qwen/Qwen2.5-0.5B-Instruct"
-	@echo "  Checkpoints, logs, and results are namespaced under MODEL_NAME."
-	@echo "  Example: make slurm-sft MODEL=Qwen/Qwen2.5-8B-Instruct"
+	@echo "  MODEL defaults to Qwen/Qwen3-1.7B"
+	@echo "  SFT_CONFIG and GRPO_CONFIG are auto-derived from MODEL_NAME."
+	@echo "  Data, checkpoints, logs, and results are namespaced by"
+	@echo "  <MODEL_NAME>/seed<SEED>, so different seeds never clobber."
+	@echo ""
+	@echo "  Examples:"
+	@echo "    make slurm-sft MODEL=Qwen/Qwen3-1.7B"
+	@echo "    make slurm-grpo MODEL=Qwen/Qwen3-4B"
+	@echo "    make slurm-sft MODEL=Qwen/Qwen3-1.7B SEED=43"
 	@echo ""
 	@echo "Direct execution targets (interactive GPU session):"
 	@echo "  prepare   Phase 0: download GSM8K + write parquets (dataval_env conda)"
@@ -131,12 +153,16 @@ help:
 	@echo ""
 	@echo "SLURM submission targets (preferred):"
 	@echo "  slurm-{prepare,embed,sft,rollout,grpo}"
-	@echo "  (grpo uses --array=0-15%2 for 16 runs, 2 concurrent)"
+	@echo "  (grpo uses --array=0-15%%2 for 16 runs, 2 concurrent)"
 	@echo ""
 	@echo "Variables (override with VAR=val):"
 	@echo "  MODEL=$(MODEL)"
 	@echo "  MODEL_NAME=$(MODEL_NAME)"
+	@echo "  SFT_CONFIG=$(SFT_CONFIG)"
+	@echo "  GRPO_CONFIG=$(GRPO_CONFIG)"
 	@echo "  SEED=$(SEED)"
+	@echo "  RUN_DIR=$(RUN_DIR)"
+	@echo "  DATA_DIR=$(DATA_DIR)"
 	@echo "  SIF=$(SIF)"
 	@echo "  OVERLAY=$(OVERLAY)"
 	@echo "  CKPT_DIR=$(CKPT_DIR)"

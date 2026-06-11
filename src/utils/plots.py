@@ -49,8 +49,8 @@ def save_sft_selection_pca_plot(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     colors = {
-        "diverse_5pct":  "#e41a1c",
-        "random_5pct":   "#377eb8",
+        "diverse_10pct":  "#e41a1c",
+        "random_10pct":   "#377eb8",
         "diverse_20pct": "#4daf4a",
         "random_20pct":  "#984ea3",
     }

@@ -19,14 +19,16 @@ REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
 
-MODEL=${MODEL:-"Qwen/Qwen2.5-0.5B-Instruct"}
+MODEL=${MODEL:-"Qwen/Qwen3-1.7B"}
 MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
 SEED=${SEED:-42}
 CANDIDATE_CAP=${CANDIDATE_CAP:-0}   # 0 = score the full train pool
 
-CKPT_DIR=$REPO_DIR/checkpoints/$MODEL_NAME
-LOGS_DIR=$REPO_DIR/logs/$MODEL_NAME
-RESULTS=$REPO_DIR/results/$MODEL_NAME
+RUN_DIR=$MODEL_NAME/seed$SEED
+DATA_DIR=$REPO_DIR/data/$RUN_DIR
+CKPT_DIR=$REPO_DIR/checkpoints/$RUN_DIR
+LOGS_DIR=$REPO_DIR/logs/$RUN_DIR
+RESULTS=$REPO_DIR/results/$RUN_DIR
 
 mkdir -p $LOGS_DIR
 
@@ -45,7 +47,7 @@ singularity exec --nv \
     python3 scripts/03_rollout_and_select_grpo.py \
         --seed $SEED \
         --candidate-cap $CANDIDATE_CAP \
-        --data-dir $REPO_DIR/data \
+        --data-dir $DATA_DIR \
         --checkpoints-dir $CKPT_DIR/sft \
         --results-dir $RESULTS \
         --logs-dir $LOGS_DIR

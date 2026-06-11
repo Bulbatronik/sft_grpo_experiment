@@ -5,8 +5,8 @@ Phase 1 — Embed GSM8K train pool, run PCA, and select SFT subsets.
 Outputs:
     data/embeddings.npy
     results/plots/pca_variance.png
-    data/sft_indices/{diverse,random}_{5,20}pct.json
-    data/sft_train/{diverse,random}_{5,20}pct.parquet
+    data/sft_indices/{diverse,random}_{10,20}pct.json
+    data/sft_train/{diverse,random}_{10,20}pct.parquet
     results/plots/sft_selection_pca.png
 """
 
@@ -32,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BUDGETS = {"5pct": 0.05, "20pct": 0.20}
+BUDGETS = {"10pct": 0.10, "20pct": 0.20}
 
 
 def parse_args() -> argparse.Namespace:

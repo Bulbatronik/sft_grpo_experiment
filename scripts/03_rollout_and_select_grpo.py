@@ -12,7 +12,7 @@ For each of the four SFT checkpoints:
 
 Outputs:
     data/rollouts/{sft_run_name}.jsonl
-    data/grpo_train/{sft_run_name}/{variance,random}_{5,20}pct.parquet
+    data/grpo_train/{sft_run_name}/{variance,random}_{10,20}pct.parquet
     results/plots/grpo_reward_scatter_{sft_run_name}.png
     results/grpo_selection_stats.json
 """
@@ -38,8 +38,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SFT_SELECTIONS = ["diverse_5pct", "random_5pct", "diverse_20pct", "random_20pct"]
-GRPO_BUDGETS = {"5pct": 0.05, "20pct": 0.20}
+SFT_SELECTIONS = ["diverse_10pct", "random_10pct", "diverse_20pct", "random_20pct"]
+GRPO_BUDGETS = {"10pct": 0.10, "20pct": 0.20}
 
 
 def parse_args() -> argparse.Namespace:

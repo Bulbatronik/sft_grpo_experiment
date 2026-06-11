@@ -15,9 +15,11 @@ Infrastructure arguments (paths, seed, selections) are passed as regular flags.
     and reports exact-match accuracy; logged as eval/acc and used for
     best-model selection via metric_for_best_model="eval_acc"
 
-Output plots (results/plots/):
-  sft_losses.png    — train + val CE-loss curves
-  sft_accuracy.png  — val accuracy curve per selection
+Outputs (suffixed with the selection name when training a subset, so SLURM
+array tasks don't overwrite each other):
+  results/plots/sft_losses[_<sel>].png    — train + val CE-loss curves
+  results/plots/sft_accuracy[_<sel>].png  — val accuracy curve
+  results/sft_metrics[_<sel>].csv         — per-step loss, grad norm, lr, eval loss/acc
 
 Checkpoint layout (compatible with Phase 4):
   checkpoints/sft/<sel>/best/          ← LoRA adapter (if lora.rank > 0)
@@ -51,7 +53,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SELECTIONS = ["diverse_5pct", "random_5pct", "diverse_20pct", "random_20pct"]
+SELECTIONS = ["diverse_10pct", "random_10pct", "diverse_20pct", "random_20pct"]
 _DEFAULT_CONFIG = ROOT / "configs" / "base_sft.yaml"
 
 
@@ -357,11 +359,17 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
     # ── Extract metrics ────────────────────────────────────────────────────────
     train_losses: list[tuple[int, float]] = []
     val_losses: list[tuple[int, float]] = []
+    train_extras: dict[int, dict] = {}  # step → {grad_norm, learning_rate}
     for entry in trainer.state.log_history:
+        step = entry.get("step", 0)
         if "loss" in entry:
-            train_losses.append((entry["step"], entry["loss"]))
+            train_losses.append((step, entry["loss"]))
+            train_extras[step] = {
+                "grad_norm": entry.get("grad_norm"),
+                "learning_rate": entry.get("learning_rate"),
+            }
         if "eval_loss" in entry:
-            val_losses.append((entry["step"], entry["eval_loss"]))
+            val_losses.append((step, entry["eval_loss"]))
 
     accuracy_history = list(accuracy_cb.history)
 
@@ -370,7 +378,12 @@ def run_sft(sel: str, args, cfg, tokenizer) -> dict:
     gc.collect()
     torch.cuda.empty_cache()
 
-    return {"train": train_losses, "val": val_losses, "accuracy": accuracy_history}
+    return {
+        "train": train_losses,
+        "val": val_losses,
+        "accuracy": accuracy_history,
+        "train_extras": train_extras,
+    }
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -411,6 +424,11 @@ def main() -> None:
     # ── Plots ─────────────────────────────────────────────────────────────────
     results_dir = Path(args.results_dir)
 
+    # When training a subset (SLURM array: one selection per task), suffix the
+    # output filenames so concurrent tasks don't overwrite each other.
+    suffix = "" if set(args.selections) == set(SELECTIONS) \
+        else "_" + "-".join(args.selections)
+
     train_curves = {s: d["train"] for s, d in results.items() if d.get("train")}
     val_curves   = {s: d["val"]   for s, d in results.items() if d.get("val")}
     acc_curves   = {s: d["accuracy"] for s, d in results.items() if d.get("accuracy")}
@@ -418,14 +436,50 @@ def main() -> None:
     from src.utils.plots import save_sft_accuracy_plot, save_sft_loss_plot
 
     if train_curves or val_curves:
-        out = results_dir / "plots" / "sft_losses.png"
+        out = results_dir / "plots" / f"sft_losses{suffix}.png"
         save_sft_loss_plot(train_curves, val_curves, out)
         logger.info("Saved loss plot → %s", out)
 
     if acc_curves:
-        out = results_dir / "plots" / "sft_accuracy.png"
+        out = results_dir / "plots" / f"sft_accuracy{suffix}.png"
         save_sft_accuracy_plot(acc_curves, out)
         logger.info("Saved accuracy plot → %s", out)
+
+    # ── Save metrics CSV ──────────────────────────────────────────────────────
+    # One row per (selection, step). Training metrics are dense (every step);
+    # eval metrics are sparse (every eval_steps). Missing values → empty.
+    import csv
+
+    csv_path = results_dir / f"sft_metrics{suffix}.csv"
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(csv_path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["selection", "step", "train_loss", "grad_norm",
+                         "learning_rate", "eval_loss", "eval_acc"])
+        for sel, d in results.items():
+            eval_loss_map  = dict(d.get("val", []))
+            eval_acc_map   = dict(d.get("accuracy", []))
+            extras         = d.get("train_extras", {})
+            # Dense training steps
+            for step, loss in d.get("train", []):
+                ex = extras.get(step, {})
+                writer.writerow([
+                    sel, step, loss,
+                    ex.get("grad_norm", ""),
+                    ex.get("learning_rate", ""),
+                    eval_loss_map.get(step, ""),
+                    eval_acc_map.get(step, ""),
+                ])
+            # Eval steps that had no training log entry (step 0 eval_on_start)
+            for step in sorted(set(eval_loss_map) | set(eval_acc_map)):
+                if not any(step == s for s, _ in d.get("train", [])):
+                    writer.writerow([
+                        sel, step, "",
+                        "", "",
+                        eval_loss_map.get(step, ""),
+                        eval_acc_map.get(step, ""),
+                    ])
+    logger.info("Saved SFT metrics CSV → %s", csv_path)
 
     if failed:
         logger.error("Failed runs: %s", failed)

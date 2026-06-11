@@ -12,20 +12,23 @@
 # Data selection is model-agnostic; results go to the model-specific results dir.
 #
 # Environment variables (set by Makefile or manually):
-#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen2.5-0.5B-Instruct)
+#   MODEL       full HuggingFace model ID  (default: Qwen/Qwen3-1.7B)
 #   MODEL_NAME  short name used in paths   (default: basename of MODEL)
 #   SEED        random seed                (default: 42)
+# All paths are namespaced by <MODEL_NAME>/seed<SEED>.
 
 REPO_DIR=/home/usemil/orcd/scratch/sft_grpo_experiment
 SIF=/home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY=/home/usemil/orcd/scratch/apptainer/verl_overlay.img
 
-MODEL=${MODEL:-"Qwen/Qwen2.5-0.5B-Instruct"}
+MODEL=${MODEL:-"Qwen/Qwen3-1.7B"}
 MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
 SEED=${SEED:-42}
 
-LOGS_DIR=$REPO_DIR/logs/$MODEL_NAME
-RESULTS=$REPO_DIR/results/$MODEL_NAME
+RUN_DIR=$MODEL_NAME/seed$SEED
+DATA_DIR=$REPO_DIR/data/$RUN_DIR
+LOGS_DIR=$REPO_DIR/logs/$RUN_DIR
+RESULTS=$REPO_DIR/results/$RUN_DIR
 
 mkdir -p $LOGS_DIR $RESULTS
 
@@ -39,5 +42,5 @@ singularity exec --nv \
     $SIF \
     python3 scripts/01_embed_and_select_sft.py \
         --seed $SEED \
-        --data-dir $REPO_DIR/data \
+        --data-dir $DATA_DIR \
         --results-dir $RESULTS

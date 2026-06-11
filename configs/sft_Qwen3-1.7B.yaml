@@ -1,0 +1,30 @@
+# SFT hyperparameters for Qwen/Qwen3-1.7B.
+# Loaded by scripts/02_train_sft.py via OmegaConf.
+# CLI dotlist overrides (e.g. training.lr=2e-4) are supported at launch time.
+
+model:
+  name: Qwen/Qwen3-1.7B
+  max_seq_length: 1024
+
+training:
+  max_steps: 200
+  eval_steps: 10
+  save_steps: 10
+  early_stopping_patience: 5
+  # Effective batch = per_device × gradient_accumulation × n_gpus = 2 × 8 × 1 = 16
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  lr: 1.0e-4
+  lr_scheduler: cosine
+  warmup_ratio: 0.1
+  weight_decay: 0.1
+  max_grad_norm: 0.1
+
+eval:
+  gen_batch_size: 16
+  max_new_tokens: 512
+
+lora:
+  rank: 32
+  alpha: 32        # alpha/rank = 1.0 (matches paper)
+  target_modules: all-linear
