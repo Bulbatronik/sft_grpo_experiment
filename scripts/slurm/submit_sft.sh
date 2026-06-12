@@ -1,14 +1,14 @@
 #!/bin/bash
 # ── SLURM resource request ────────────────────────────────────────────────────
 #SBATCH -J gsm8k_sft
-#SBATCH -t 4:00:00
+#SBATCH -t 6:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH -c 16
-#SBATCH -p mit_preemptable
-#SBATCH --array=0-3
-#   ^─ 4 independent tasks, one per SFT data selection, all running in parallel.
-#      Each task gets its own GPU and log file.
+#SBATCH -p mit_normal_gpu
+#SBATCH --array=0-3%2                 # 4 tasks (0–3), at most 2 running at once
+#   ^─ 4 independent tasks, one per SFT data selection, at most 2 running at
+#      once. Each task gets its own GPU and log file.
 #SBATCH --output=/home/usemil/orcd/scratch/sft_grpo_experiment/logs/%x-%A_%a.out
 
 # Phase 2 — SFT training (4 selections as a SLURM array).
@@ -60,7 +60,7 @@ export TRITON_CC=/usr/bin/gcc
 
 cd $REPO_DIR
 singularity exec --nv \
-    --overlay $OVERLAY \
+    --overlay $OVERLAY:ro \
     -B /orcd,/home \
     --env PYTHONNOUSERSITE=1 \
     $SIF \

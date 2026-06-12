@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J gsm8k_rollout
-#SBATCH -t 4:00:00
+#SBATCH -t 6:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH -c 16
@@ -40,7 +40,7 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 cd $REPO_DIR
 singularity exec --nv \
-    --overlay $OVERLAY \
+    --overlay $OVERLAY:ro \
     -B /orcd,/home \
     --env PYTHONNOUSERSITE=1 \
     $SIF \

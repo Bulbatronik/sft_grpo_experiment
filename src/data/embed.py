@@ -4,7 +4,7 @@ Sentence-level embeddings + PCA for the GSM8K training pool.
 Public API
 ----------
 embed_questions(questions, model_name, cache_path, force)  -> np.ndarray (N, D)
-fit_pca(embeddings, variance_threshold, max_components)     -> (PCA, np.ndarray)
+fit_pca(embeddings, variance_threshold)                     -> (PCA, np.ndarray)
 """
 
 from __future__ import annotations
@@ -58,14 +58,15 @@ def embed_questions(
 def fit_pca(
     embeddings: np.ndarray,
     variance_threshold: float = 0.95,
-    max_components: int = 50,
 ) -> tuple[PCA, np.ndarray]:
-    """Fit PCA; keep components that explain >= variance_threshold of variance (capped at max_components).
+    """Fit PCA; keep the smallest number of components whose cumulative
+    explained variance reaches `variance_threshold`. No component cap — the
+    threshold alone decides the dimensionality.
 
-    Returns (fitted PCA, transformed embeddings of shape (N, n_components)).
+    Returns (fitted PCA, transformed embeddings of shape (N, n_keep)).
     """
-    # First fit full PCA to determine how many components we need.
-    n_max = min(max_components, embeddings.shape[1], embeddings.shape[0] - 1)
+    # Fit the full decomposition once to read the variance spectrum.
+    n_max = min(embeddings.shape[1], embeddings.shape[0] - 1)
     full_pca = PCA(n_components=n_max, random_state=42)
     full_pca.fit(embeddings)
 
@@ -74,10 +75,11 @@ def fit_pca(
     n_keep = min(n_keep, n_max)
 
     logger.info(
-        "PCA: keeping %d / %d components (%.1f%% variance explained)",
+        "PCA: keeping %d / %d components (%.1f%% variance explained, threshold %.0f%%)",
         n_keep,
         n_max,
         cumvar[n_keep - 1] * 100,
+        variance_threshold * 100,
     )
 
     pca = PCA(n_components=n_keep, random_state=42)

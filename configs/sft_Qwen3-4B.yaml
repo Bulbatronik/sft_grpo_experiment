@@ -8,20 +8,22 @@ model:
 
 training:
   max_steps: 200
-  eval_steps: 10
-  save_steps: 10
-  early_stopping_patience: 5
+  # Accuracy eval generates the full 1319-example test set: eval every 20
+  # steps keeps total eval cost within the 6 h walltime.
+  eval_steps: 20
+  save_steps: 20          # must stay aligned with eval_steps for best-model loading
+  early_stopping_patience: 3   # 3 evals × 20 steps = 60 steps without improvement
   # Effective batch = per_device × gradient_accumulation × n_gpus = 1 × 16 × 1 = 16
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 16
   lr: 5.0e-5
   lr_scheduler: cosine
   warmup_ratio: 0.1
-  weight_decay: 0.1
+  weight_decay: 0.01
   max_grad_norm: 0.1
 
 eval:
-  gen_batch_size: 8
+  gen_batch_size: 16
   max_new_tokens: 512
 
 lora:

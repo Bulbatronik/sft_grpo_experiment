@@ -24,6 +24,7 @@ MODEL_NAME=${MODEL_NAME:-$(basename "$MODEL")}
 SEED=${SEED:-42}
 SFT_CONFIG=${SFT_CONFIG:-$REPO_DIR/configs/sft_${MODEL_NAME}.yaml}
 GRPO_CONFIG=${GRPO_CONFIG:-$REPO_DIR/configs/grpo_${MODEL_NAME}.yaml}
+STRATEGIES=${STRATEGIES:-"diverse random"}
 
 RUN_DIR=$MODEL_NAME/seed$SEED
 DATA_DIR=$REPO_DIR/data/$RUN_DIR
@@ -32,7 +33,7 @@ LOGS_DIR=$REPO_DIR/logs/$RUN_DIR
 mkdir -p "$LOGS_DIR"
 
 # sbatch propagates the caller's environment to the jobs by default.
-export MODEL MODEL_NAME SEED DATA_DIR SFT_CONFIG GRPO_CONFIG
+export MODEL MODEL_NAME SEED DATA_DIR SFT_CONFIG GRPO_CONFIG STRATEGIES
 
 echo "Submitting pipeline for MODEL=$MODEL  SEED=$SEED"
 echo "  logs → $LOGS_DIR"
@@ -41,13 +42,13 @@ j_prep=$(sbatch --parsable --output=$LOGS_DIR/%x-%j.out \
          $SLURM_DIR/submit_prepare.sh)
 echo "  phase 0 prepare:  job $j_prep"
 
-j_embed=$(sbatch --parsable --dependency=afterok:$j_prep \
-          --output=$LOGS_DIR/%x-%j.out $SLURM_DIR/submit_embed.sh)
-echo "  phase 1 embed:    job $j_embed  (after $j_prep)"
+j_select=$(sbatch --parsable --dependency=afterok:$j_prep \
+           --output=$LOGS_DIR/%x-%j.out $SLURM_DIR/submit_select.sh)
+echo "  phase 1 select:   job $j_select  (after $j_prep)"
 
-j_sft=$(sbatch --parsable --dependency=afterok:$j_embed \
+j_sft=$(sbatch --parsable --dependency=afterok:$j_select \
         --output=$LOGS_DIR/%x-%A_%a.out $SLURM_DIR/submit_sft.sh)
-echo "  phase 2 sft:      job $j_sft  (array 0-3, after $j_embed)"
+echo "  phase 2 sft:      job $j_sft  (array 0-3, after $j_select)"
 
 j_roll=$(sbatch --parsable --dependency=afterok:$j_sft \
          --output=$LOGS_DIR/%x-%j.out $SLURM_DIR/submit_rollout.sh)

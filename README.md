@@ -59,14 +59,20 @@ Verified stack: `verl 0.8.0.dev` · `vllm 0.11.0` · `torch 2.8.0+cu128`
 
 Jobs are submitted via SLURM from the login node. Each phase depends on the previous one completing successfully.
 
+**One-shot:** `make slurm-all MODEL=Qwen/Qwen3-1.7B SEED=42` submits phases
+0–4 as a single SLURM dependency chain (each phase auto-starts when the
+previous succeeds). See [COMMANDS.md](COMMANDS.md) for the full cheat sheet.
+
+Phase by phase:
+
 ```bash
 cd /home/usemil/orcd/scratch/sft_grpo_experiment
 
 # Phase 0 — data prep (CPU, ~5 min)
 make slurm-prepare
 
-# Phase 1 — embed + PCA + SFT selection (~20 min, 1 GPU)
-make slurm-embed MODEL=Qwen/Qwen3-1.7B
+# Phase 1 — SFT data selection (~20 min, 1 GPU; pluggable STRATEGIES)
+make slurm-select MODEL=Qwen/Qwen3-1.7B
 
 # Phase 2 — 4 SFT runs as a SLURM array (~1–2 h each, 1 GPU per task)
 make slurm-sft MODEL=Qwen/Qwen3-1.7B

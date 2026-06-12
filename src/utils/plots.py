@@ -83,36 +83,82 @@ def save_grpo_reward_scatter(
     out_path: str | Path,
     title: str = "",
 ) -> None:
-    """Scatter mean_reward vs std_reward with marginal histograms."""
-    fig = plt.figure(figsize=(9, 8))
-    gs = fig.add_gridspec(
-        2, 2, width_ratios=[4, 1], height_ratios=[1, 4], hspace=0.05, wspace=0.05
+    """Visualise rollout difficulty and what each GRPO selection picked.
+
+    With n binary rollouts the (mean, std) pairs take only n+1 discrete
+    values, so a raw scatter collapses onto a handful of overplotted dots.
+    Instead:
+      left  — bar chart of the share of each set (pool + selections) falling
+              in each mean-reward bin: shows *where* each selection draws from.
+      right — pool count at each discrete (mean, std) point, bubble-sized,
+              tracing the binomial std curve that variance selection ranks by.
+    """
+    sel_colors = {
+        "variance_10pct": "#e41a1c",   # reds = variance
+        "variance_20pct": "#ff7f7f",
+        "random_10pct":   "#377eb8",   # blues = random
+        "random_20pct":   "#7fb3d9",
+    }
+
+    levels = np.unique(np.round(mean_rewards, 6))
+    n_lv = len(levels)
+
+    def _shares(values: np.ndarray) -> np.ndarray:
+        counts = np.array([(np.isclose(values, lv)).sum() for lv in levels], dtype=float)
+        return counts / max(len(values), 1)
+
+    fig, (ax_bar, ax_std) = plt.subplots(
+        1, 2, figsize=(13, 5), gridspec_kw={"width_ratios": [3, 2]}
     )
-    ax_main = fig.add_subplot(gs[1, 0])
-    ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main)
-    ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main)
 
-    colors = {"pool": "lightgrey", "variance": "#e41a1c", "random": "#377eb8"}
+    # ── Left: share of each set per mean-reward level ─────────────────────────
+    groups = [("pool", None)] + list(selection_masks.items())
+    n_groups = len(groups)
+    width = 0.8 / n_groups
+    x = np.arange(n_lv)
 
-    ax_main.scatter(mean_rewards, std_rewards, c="lightgrey", s=4, alpha=0.3, label="pool")
-    for name, mask in selection_masks.items():
-        c = colors.get(name, "#444444")
-        ax_main.scatter(mean_rewards[mask], std_rewards[mask], c=c, s=16, alpha=0.7, label=name)
+    for gi, (name, mask) in enumerate(groups):
+        vals = mean_rewards if mask is None else mean_rewards[mask]
+        color = "grey" if mask is None else sel_colors.get(name, "#444444")
+        n = len(vals)
+        ax_bar.bar(
+            x + (gi - n_groups / 2 + 0.5) * width,
+            _shares(vals),
+            width=width * 0.95,
+            color=color,
+            label=f"{name} (n={n})",
+        )
 
-    ax_main.set_xlabel("mean reward")
-    ax_main.set_ylabel("std reward")
+    ax_bar.set_xticks(x)
+    ax_bar.set_xticklabels([f"{lv:.1f}" for lv in levels])
+    ax_bar.set_xlabel("mean reward over rollouts (pass rate)")
+    ax_bar.set_ylabel("share of set")
+    ax_bar.set_title("Where each selection draws from")
+    ax_bar.legend(fontsize=8)
+    ax_bar.grid(True, axis="y", linestyle=":", alpha=0.4)
+
+    # ── Right: pool counts on the (mean, std) plane ───────────────────────────
+    pts: dict[tuple[float, float], int] = {}
+    for m, s in zip(np.round(mean_rewards, 6), np.round(std_rewards, 6)):
+        pts[(m, s)] = pts.get((m, s), 0) + 1
+    max_count = max(pts.values())
+    for (m, s), c in sorted(pts.items()):
+        ax_std.scatter([m], [s], s=80 + 2200 * c / max_count,
+                       color="grey", alpha=0.45, edgecolor="black", zorder=3)
+        ax_std.annotate(str(c), (m, s), ha="center", va="center",
+                        fontsize=7.5, zorder=4)
+
+    ax_std.set_xlabel("mean reward")
+    ax_std.set_ylabel("std reward (variance-selection score)")
+    ax_std.set_title("Pool difficulty profile")
+    ax_std.set_xlim(-0.12, 1.12)
+    ax_std.set_ylim(-0.06, max(std_rewards) * 1.25 + 0.01)
+    ax_std.grid(True, linestyle=":", alpha=0.4)
+
     if title:
-        ax_main.set_title(title)
-    ax_main.legend(fontsize=8)
+        fig.suptitle(title, fontsize=12)
 
-    ax_top.hist(mean_rewards, bins=40, color="lightgrey", edgecolor="none")
-    ax_top.set_ylabel("count")
-    plt.setp(ax_top.get_xticklabels(), visible=False)
-
-    ax_right.hist(std_rewards, bins=40, color="lightgrey", edgecolor="none", orientation="horizontal")
-    ax_right.set_xlabel("count")
-    plt.setp(ax_right.get_yticklabels(), visible=False)
-
+    fig.tight_layout()
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)

@@ -23,23 +23,30 @@ RESULTS    ?= $(PWD)/results/$(RUN_DIR)
 # CPU-only phases use the dataval_env conda environment.
 CONDA_PYTHON ?= $(HOME)/.conda/envs/dataval_env/bin/python3
 
-# GPU phases run inside the Singularity container with a writable overlay.
+# GPU phases run inside the Singularity container. The overlay is mounted
+# read-only (:ro) — a writable ext3 overlay can be locked by only ONE process,
+# which breaks concurrent array tasks. Drop :ro temporarily if you need to
+# pip-install into the overlay (with no jobs running).
 SIF        ?= /home/usemil/orcd/scratch/apptainer/verl.sif
 OVERLAY    ?= /home/usemil/orcd/scratch/apptainer/verl_overlay.img
-SINGULARITY ?= singularity exec --nv --overlay $(OVERLAY) -B /orcd,/home --env PYTHONNOUSERSITE=1 $(SIF)
+SINGULARITY ?= singularity exec --nv --overlay $(OVERLAY):ro -B /orcd,/home --env PYTHONNOUSERSITE=1 $(SIF)
 
-.PHONY: all prepare embed sft rollout grpo grpo-dry plot slurm-prepare slurm-embed slurm-sft slurm-rollout slurm-grpo clean help
+# Selection strategies for Phase 1 (see src/data/select_sft.py).
+STRATEGIES ?= diverse random
+
+.PHONY: all prepare select sft rollout grpo grpo-dry plot slurm-prepare slurm-select slurm-sft slurm-rollout slurm-grpo slurm-all clean help
 
 # ── Direct execution (interactive GPU session) ────────────────────────────────
 
-all: prepare embed sft rollout grpo plot
+all: prepare select sft rollout grpo plot
 
 prepare:
 	$(CONDA_PYTHON) scripts/00_prepare_gsm8k.py --seed $(SEED) --data-dir $(DATA_DIR)
 
-embed:
-	$(SINGULARITY) python3 scripts/01_embed_and_select_sft.py \
-		--seed $(SEED) --data-dir $(DATA_DIR) --results-dir $(RESULTS)
+select:
+	$(SINGULARITY) python3 scripts/01_select_sft.py \
+		--seed $(SEED) --data-dir $(DATA_DIR) --results-dir $(RESULTS) \
+		--strategies $(STRATEGIES) --ifd-model $(MODEL)
 
 sft:
 	CC=/usr/bin/gcc TRITON_CC=/usr/bin/gcc \
@@ -98,10 +105,10 @@ slurm-prepare:
 	SEED="$(SEED)" DATA_DIR="$(DATA_DIR)" \
 	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_prepare.sh
 
-slurm-embed:
+slurm-select:
 	mkdir -p $(LOGS_DIR)
-	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" \
-	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_embed.sh
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" STRATEGIES="$(STRATEGIES)" \
+	sbatch --output=$(LOGS_DIR)/%x-%j.out scripts/slurm/submit_select.sh
 
 slurm-sft:
 	mkdir -p $(LOGS_DIR)
@@ -117,6 +124,14 @@ slurm-grpo:
 	mkdir -p $(LOGS_DIR)
 	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" GRPO_CONFIG="$(GRPO_CONFIG)" \
 	sbatch --output=$(LOGS_DIR)/%x-%A_%a.out scripts/slurm/submit_grpo.sh
+
+# Submit phases 0–4 at once as a SLURM dependency chain (afterok): each phase
+# waits in the queue and starts only when the previous one succeeds. Runs from
+# the login node — no babysitter job needed.
+slurm-all:
+	MODEL="$(MODEL)" MODEL_NAME="$(MODEL_NAME)" SEED="$(SEED)" \
+	SFT_CONFIG="$(SFT_CONFIG)" GRPO_CONFIG="$(GRPO_CONFIG)" \
+	bash scripts/slurm/submit_all.sh
 
 # ── Maintenance ──────────────────────────────────────────────────────────────
 
@@ -143,7 +158,7 @@ help:
 	@echo ""
 	@echo "Direct execution targets (interactive GPU session):"
 	@echo "  prepare   Phase 0: download GSM8K + write parquets (dataval_env conda)"
-	@echo "  embed     Phase 1: embed + PCA + SFT selection (Singularity)"
+	@echo "  select    Phase 1: SFT data selection, pluggable STRATEGIES (Singularity)"
 	@echo "  sft       Phase 2: 4 SFT runs via TRL SFTTrainer (Singularity)"
 	@echo "  rollout   Phase 3: rollout scoring + GRPO selection (Singularity)"
 	@echo "  grpo      Phase 4: 16 GRPO runs via verl (Singularity)"
@@ -152,7 +167,8 @@ help:
 	@echo "  all       Run all phases end-to-end"
 	@echo ""
 	@echo "SLURM submission targets (preferred):"
-	@echo "  slurm-{prepare,embed,sft,rollout,grpo}"
+	@echo "  slurm-{prepare,select,sft,rollout,grpo}"
+	@echo "  slurm-all   submit phases 0-4 as one dependency chain"
 	@echo "  (grpo uses --array=0-15%%2 for 16 runs, 2 concurrent)"
 	@echo ""
 	@echo "Variables (override with VAR=val):"

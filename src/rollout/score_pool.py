@@ -50,11 +50,18 @@ def score_pool(
         from vllm.lora.request import LoRARequest
         adapter_cfg = read_adapter_config(model_path)
         base_model = adapter_cfg["base_model_name_or_path"]
-        logger.info("LoRA checkpoint detected. Base model: %s  Adapter: %s", base_model, model_path)
+        # vLLM defaults max_lora_rank to 16 and rejects adapters above it, so
+        # size it from the adapter we are about to load.
+        lora_rank = int(adapter_cfg.get("r", 16))
+        logger.info(
+            "LoRA checkpoint detected. Base model: %s  Adapter: %s  rank=%d",
+            base_model, model_path, lora_rank,
+        )
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         llm = LLM(
             model=base_model,
             enable_lora=True,
+            max_lora_rank=lora_rank,
             gpu_memory_utilization=gpu_memory_utilization,
             seed=seed,
             trust_remote_code=True,
